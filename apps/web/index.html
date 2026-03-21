@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Unified Subscription Proxy Admin</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">Unified Subscription Proxy</p>
+        <h1>统一订阅反代后台</h1>
+        <p class="lede">把 Claude、Codex、GPT、Gemini、Antigravity 的共享账号池、订阅套餐、API Key 和统一路由放到同一个控制面里。</p>
+      </section>
+
+      <section class="grid stats" id="stats"></section>
+
+      <section class="grid two">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>上游账号池</h2>
+            <span id="proxy-core-origin" class="tag"></span>
+          </div>
+          <div id="accounts" class="stack"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>服务套餐</h2>
+            <span class="tag">Package + Alias Policy</span>
+          </div>
+          <div id="packages" class="stack"></div>
+        </div>
+      </section>
+
+      <section class="grid two">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>订阅与 API Key</h2>
+          </div>
+          <div id="subscriptions" class="stack"></div>
+          <div id="keys" class="stack small-gap"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>快速验证</h2>
+            <span class="tag">Proxy Dispatch</span>
+          </div>
+          <form id="dispatch-form" class="form">
+            <label>
+              <span>API Key</span>
+              <input id="api-key" value="usp_demo_key" />
+            </label>
+            <label>
+              <span>Model Alias</span>
+              <select id="model-alias"></select>
+            </label>
+            <label>
+              <span>Input</span>
+              <textarea id="input" rows="4">请返回当前路由选择结果。</textarea>
+            </label>
+            <button type="submit">调用统一反代</button>
+          </form>
+          <pre id="dispatch-result" class="code"></pre>
+        </div>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+  </html>
+
