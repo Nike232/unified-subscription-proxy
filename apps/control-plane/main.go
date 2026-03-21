@@ -19,10 +19,11 @@ import (
 
 func main() {
 	addr := getenv("CONTROL_PLANE_ADDR", ":8080")
+	publicOrigin := controlPlanePublicOrigin(addr)
 	dataPath := getenv("PLATFORM_DATA_FILE", "./data/platform.json")
-	proxyOrigin := getenv("PROXY_CORE_ORIGIN", "http://127.0.0.1:8081")
 	storeBackend := getenv("CONTROL_PLANE_STORE_BACKEND", "file")
 	databaseURL := getenv("DATABASE_URL", "")
+	runtimeConfig := loadProxyRuntimeConfig()
 
 	st, err := store.NewConfiguredStore(context.Background(), storeBackend, dataPath, databaseURL)
 	if err != nil {
@@ -45,6 +46,7 @@ func main() {
 			"status":        "ok",
 			"service":       "control-plane",
 			"store_backend": storeBackend,
+			"proxy_runtime": runtimeConfig,
 		})
 	})
 
@@ -63,6 +65,14 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, overview)
+	}))
+
+	mux.HandleFunc("/api/admin/kernel-status", requireRole(svc, "admin", func(w http.ResponseWriter, r *http.Request, _ domain.User) {
+		if r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, http.StatusOK, probeKernelStatus(r.Context(), http.DefaultClient, runtimeConfig))
 	}))
 
 	mux.HandleFunc("/api/admin/data", requireRole(svc, "admin", func(w http.ResponseWriter, r *http.Request, _ domain.User) {
@@ -477,10 +487,14 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"packages":             data.ServicePackages,
-			"model_alias_policies": data.ModelAliasPolicies,
-			"proxy_core_origin":    proxyOrigin,
-			"oauth_providers":      mapsKeys(oauthProviderConfigs),
+			"packages":                  data.ServicePackages,
+			"model_alias_policies":      data.ModelAliasPolicies,
+			"proxy_core_mode":           runtimeConfig.Mode,
+			"proxy_core_primary":        runtimeConfig.Primary,
+			"proxy_core_primary_origin": runtimeConfig.PrimaryOrigin,
+			"proxy_core_origin":         runtimeConfig.PrimaryOrigin,
+			"proxy_core_origins":        runtimeConfig.Origins,
+			"oauth_providers":           mapsKeys(oauthProviderConfigs),
 		})
 	})
 
@@ -627,7 +641,7 @@ func main() {
 				writeError(w, http.StatusBadRequest, err)
 				return
 			}
-			checkout, err := svc.CreateCheckoutOrder(user.ID, req.PackageID, req.BindAPIKeyID, req.CreateAPIKey, req.AutoRenew, "http://127.0.0.1"+addr)
+			checkout, err := svc.CreateCheckoutOrder(user.ID, req.PackageID, req.BindAPIKeyID, req.CreateAPIKey, req.AutoRenew, publicOrigin)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err)
 				return
@@ -719,11 +733,11 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"api_key": apiKey,
-			"package": pkg,
-			"user_group": user.Group,
-			"rpm": user.RPM,
-			"tpm": user.TPM,
+			"api_key":     apiKey,
+			"package":     pkg,
+			"user_group":  user.Group,
+			"rpm":         user.RPM,
+			"tpm":         user.TPM,
 			"total_quota": user.TotalQuota,
 		})
 	})
@@ -781,6 +795,13 @@ func getenv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func controlPlanePublicOrigin(addr string) string {
+	if origin := strings.TrimSpace(os.Getenv("CONTROL_PLANE_PUBLIC_ORIGIN")); origin != "" {
+		return strings.TrimRight(origin, "/")
+	}
+	return "http://127.0.0.1" + addr
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {

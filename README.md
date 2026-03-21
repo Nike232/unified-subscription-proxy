@@ -2,6 +2,13 @@
 
 一个面向 `Claude / Codex / OpenAI(GPT) / Gemini / Antigravity` 的统一订阅反代平台 monorepo。
 
+当前仓库采用双栈内核并行：
+
+- `apps/proxy-core-go`
+  Go 实现的统一反代内核
+- `apps/proxy-core-rust`
+  Rust 实现的高集成反代内核
+
 当前版本实现了一个可运行的首版骨架：
 
 - `apps/control-plane`
@@ -22,7 +29,7 @@
 cd /Users/tomfng/projects/claw_test/zhongzhuan/unified-subscription-proxy
 cp .env.example .env
 go run ./apps/control-plane
-go run ./apps/proxy-core
+go run ./apps/proxy-core-go
 ```
 
 如果要跑 PostgreSQL 版本：
@@ -37,8 +44,25 @@ go run ./apps/control-plane
 打开：
 
 - Control Plane: `http://127.0.0.1:8080`
-- Proxy Core: `http://127.0.0.1:8081`
+- Proxy Core Go: `http://127.0.0.1:8081`
+- Proxy Core Rust: `http://127.0.0.1:8045`
 - Admin Web: `http://127.0.0.1:8080/`
+
+## Runtime Selection
+
+- `PROXY_CORE_MODE=go|rust|dual`
+- `PROXY_CORE_PRIMARY=go|rust`
+- `PROXY_CORE_GO_ORIGIN` 和 `PROXY_CORE_RUST_ORIGIN` 控制两条内核的公开地址
+- `CONTROL_PLANE_PUBLIC_ORIGIN` 控制用户支付回跳和 checkout 链接生成地址
+- `WEB_CONTROL_PLANE_UPSTREAM` 只用于 `web` 容器内的 `/api` 与 `/mockpay` 反向代理
+- `control-plane` 的 `/api/public/catalog` 和 `/api/admin/kernel-status` 会返回当前主用内核与双栈健康状态
+
+## Compose Modes
+
+- `docker compose up -d --build db control-plane web proxy-core-go` 对应 `PROXY_CORE_MODE=go`
+- `docker compose up -d --build db control-plane web proxy-core-rust` 对应 `PROXY_CORE_MODE=rust`
+- `docker compose up -d --build db control-plane web proxy-core-go proxy-core-rust` 对应 `PROXY_CORE_MODE=dual`
+- GitHub Actions 的 `compose-smoke` 会在 `go / rust / dual` 三种模式下跑一次最小联调，并通过 `upstream-mock` 验证 API Key 调用闭环
 
 ## Key Ideas
 
@@ -82,6 +106,16 @@ go run ./apps/control-plane
 - usage log 支持按 `error_type` 和 `account_id` 筛选
 - 用户/管理员登录态与角色隔离
 - 用户自助下单、Mock 支付回调、订阅生效与 API Key 自助管理
+- 双栈运行时配置、内核健康探测与最小共享契约测试
+
+## Build Notes
+
+- `deploy/` 下的旧 Dockerfile 已不再作为主构建入口；当前以 `apps/*/Dockerfile` 和 GitHub Actions matrix 为准
+- Docker 发布会分别产出：
+  - `control-plane`
+  - `proxy-core-go`
+  - `proxy-core-rust`
+  - `web`
 
 ## Demo Accounts
 

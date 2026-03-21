@@ -1,11 +1,11 @@
-FROM golang:1.26-alpine AS build
+# Deprecated compatibility wrapper. Prefer apps/proxy-core-go/Dockerfile.
+FROM golang:1.24-alpine AS build
 WORKDIR /src
 COPY . .
-RUN go build -o /out/proxy-core ./apps/proxy-core
+RUN go build -o /out/proxy-core ./apps/proxy-core-go
 
 FROM alpine:3.21
 WORKDIR /app
 COPY --from=build /out/proxy-core /app/proxy-core
 EXPOSE 8081
 CMD ["/app/proxy-core"]
-

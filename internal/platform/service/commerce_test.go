@@ -43,7 +43,7 @@ func TestCreateCheckoutOrderAndCompletePaymentCreatesSubscriptionAndKey(t *testi
 func TestValidateAPIKeyRejectsExpiredSubscription(t *testing.T) {
 	data := store.BootstrapData()
 	data.Subscriptions[0].ExpiresAt = data.Subscriptions[0].StartsAt
-	if _, _, err := ValidateAPIKeyInData(data, "usp_demo_key"); err == nil {
+	if _, _, _, err := ValidateAPIKeyInData(data, "usp_demo_key"); err == nil {
 		t.Fatalf("expected expired subscription to reject api key")
 	}
 }

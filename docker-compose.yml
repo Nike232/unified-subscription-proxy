@@ -1,38 +1,95 @@
-version: '3.8'
-
 services:
   control-plane:
+    build:
+      context: .
+      dockerfile: apps/control-plane/Dockerfile
     image: ghcr.io/nike232/unified-subscription-proxy-control-plane:main
     ports:
       - "8080:8080"
     environment:
-      - POSTGRES_DSN=postgres://postgres:password@db:5432/subscription_proxy?sslmode=disable
-      - REDIS_ADDR=redis:6379
-      - PORT=8080
+      CONTROL_PLANE_ADDR: ":8080"
+      CONTROL_PLANE_PUBLIC_ORIGIN: ${CONTROL_PLANE_PUBLIC_ORIGIN:-http://127.0.0.1:3000}
+      CONTROL_PLANE_STORE_BACKEND: postgres
+      DATABASE_URL: postgres://postgres:password@db:5432/subscription_proxy?sslmode=disable
+      PROXY_CORE_MODE: ${PROXY_CORE_MODE:-dual}
+      PROXY_CORE_PRIMARY: ${PROXY_CORE_PRIMARY:-go}
+      PROXY_CORE_GO_ORIGIN: http://proxy-core-go:8081
+      PROXY_CORE_RUST_ORIGIN: http://proxy-core-rust:8045
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+      CLAUDE_ACCESS_TOKEN: ${CLAUDE_ACCESS_TOKEN:-}
+      CLAUDE_BASE_URL: ${CLAUDE_BASE_URL:-https://api.anthropic.com}
+      CODEX_API_KEY: ${CODEX_API_KEY:-}
+      CODEX_ACCESS_TOKEN: ${CODEX_ACCESS_TOKEN:-}
+      CODEX_BASE_URL: ${CODEX_BASE_URL:-https://api.openai.com}
+      CODEX_ORGANIZATION_ID: ${CODEX_ORGANIZATION_ID:-}
+      ANTIGRAVITY_API_KEY: ${ANTIGRAVITY_API_KEY:-}
+      ANTIGRAVITY_ACCESS_TOKEN: ${ANTIGRAVITY_ACCESS_TOKEN:-}
+      ANTIGRAVITY_TENANT_ID: ${ANTIGRAVITY_TENANT_ID:-}
+      ANTIGRAVITY_BASE_URL: ${ANTIGRAVITY_BASE_URL:-https://api.antigravity.example}
     depends_on:
       - db
-      - redis
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
-  proxy-core:
-    image: ghcr.io/nike232/unified-subscription-proxy-proxy-core:main
+  proxy-core-go:
+    build:
+      context: .
+      dockerfile: apps/proxy-core-go/Dockerfile
+    image: ghcr.io/nike232/unified-subscription-proxy-proxy-core-go:main
     ports:
-      - "8045:8045" # Main Proxy Port
-      - "19527:19527" # Admin Protocol Port (Legacy)
+      - "8081:8081"
     environment:
-      - CONTROL_PLANE_URL=http://control-plane:8080
-      - ABV_API_KEY=admin
-      - ABV_AUTH_MODE=strict
+      CONTROL_PLANE_ORIGIN: http://control-plane:8080
+      PROXY_CORE_ADDR: ":8081"
+    depends_on:
+      - control-plane
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/healthz >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  proxy-core-rust:
+    build:
+      context: apps/proxy-core-rust
+      dockerfile: Dockerfile
+    image: ghcr.io/nike232/unified-subscription-proxy-proxy-core-rust:main
+    ports:
+      - "8045:8045"
+    environment:
+      CONTROL_PLANE_ORIGIN: http://control-plane:8080
     command: ["--headless"]
     depends_on:
       - control-plane
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8045/healthz >/dev/null"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
 
   web:
+    build:
+      context: apps/web
+      dockerfile: Dockerfile
     image: ghcr.io/nike232/unified-subscription-proxy-web:main
     ports:
-      - "80:80"
       - "3000:80"
+    environment:
+      CONTROL_PLANE_UPSTREAM: ${WEB_CONTROL_PLANE_UPSTREAM:-http://control-plane:8080}
     depends_on:
       - control-plane
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
 
   db:
     image: postgres:15-alpine
@@ -44,14 +101,24 @@ services:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d subscription_proxy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  redis:
-    image: redis:7-alpine
+  upstream-mock:
+    profiles: ["smoke"]
+    image: python:3.12-alpine
+    working_dir: /app
+    command: ["python", "/app/tests/compose/mock_upstream.py"]
     volumes:
-      - redisdata:/data
-    ports:
-      - "6379:6379"
+      - .:/app:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9000/healthz >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   pgdata:
-  redisdata:

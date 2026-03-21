@@ -1,4 +1,5 @@
-FROM golang:1.26-alpine AS build
+# Deprecated compatibility wrapper. Prefer apps/control-plane/Dockerfile.
+FROM golang:1.24-alpine AS build
 WORKDIR /src
 COPY . .
 RUN go build -o /out/control-plane ./apps/control-plane
@@ -9,4 +10,3 @@ COPY --from=build /out/control-plane /app/control-plane
 COPY apps/web /app/apps/web
 EXPOSE 8080
 CMD ["/app/control-plane"]
-

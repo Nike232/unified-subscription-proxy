@@ -17,12 +17,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [control-plane, proxy-core, web]
+        service: [control-plane, proxy-core-go, proxy-core-rust, web]
         include:
           - service: control-plane
             dockerfile: apps/control-plane/Dockerfile
             context: .
-          - service: proxy-core
+          - service: proxy-core-go
+            dockerfile: apps/proxy-core-go/Dockerfile
+            context: .
+          - service: proxy-core-rust
             dockerfile: Dockerfile
             context: apps/proxy-core-rust
           - service: web
@@ -48,6 +51,12 @@ jobs:
       - name: Set Image Name Lowcase
         run: |
           echo "IMAGE_NAME=ghcr.io/${{ github.repository_owner }}/unified-subscription-proxy-${{ matrix.service }}" | tr '[:upper:]' '[:lower:]' >> $GITHUB_ENV
+
+      - name: Show build target
+        run: |
+          echo "service=${{ matrix.service }}"
+          echo "context=${{ matrix.context }}"
+          echo "dockerfile=${{ matrix.dockerfile }}"
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta

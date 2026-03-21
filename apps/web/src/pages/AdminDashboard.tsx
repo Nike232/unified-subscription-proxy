@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiFetch } from "../lib/api";
 
 interface User {
   id: string;
@@ -12,21 +13,37 @@ interface User {
   tpm: number;
 }
 
+interface KernelStatus {
+  mode: string;
+  primary: string;
+  kernels: Record<string, {
+    origin: string;
+    healthy: boolean;
+    configured: boolean;
+    role: string;
+    error?: string;
+  }>;
+}
+
 export default function AdminDashboard() {
   const [users, setUsers] = useState<User[]>([]);
+  const [kernelStatus, setKernelStatus] = useState<KernelStatus | null>(null);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("http://localhost:8080/api/admin/users", {
-      headers: { "Authorization": "Bearer admin" } // Mock admin token for testing
-    })
-      .then(res => res.json())
-      .then(data => {
-        setUsers(data || []);
+    Promise.all([
+      apiFetch<User[]>("/api/admin/users"),
+      apiFetch<KernelStatus>("/api/admin/kernel-status"),
+    ])
+      .then(([userData, kernelData]) => {
+        setUsers(userData || []);
+        setKernelStatus(kernelData);
         setLoading(false);
       })
-      .catch(err => {
+      .catch((err: Error) => {
         console.error(err);
+        setError(err.message);
         setLoading(false);
       });
   }, []);
@@ -43,14 +60,42 @@ export default function AdminDashboard() {
           <p className="text-sm text-slate-500 mt-2 font-medium">Registered Users</p>
         </div>
         <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center min-h-[140px]">
-          <div className="text-3xl font-bold text-slate-700">8</div>
-          <p className="text-sm text-slate-500 mt-2 font-medium">Upstream Proxies</p>
+          <div className="text-3xl font-bold text-slate-700">{kernelStatus ? Object.keys(kernelStatus.kernels).length : "-"}</div>
+          <p className="text-sm text-slate-500 mt-2 font-medium">Proxy Kernels</p>
         </div>
         <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center min-h-[140px]">
-          <div className="text-3xl font-bold text-emerald-500">99.9%</div>
-          <p className="text-sm text-slate-500 mt-2 font-medium">System Uptime</p>
+          <div className="text-3xl font-bold text-emerald-500">{kernelStatus?.primary ?? "-"}</div>
+          <p className="text-sm text-slate-500 mt-2 font-medium">Primary Kernel</p>
         </div>
       </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100">
+          <h3 className="font-semibold text-slate-800">Kernel Runtime</h3>
+          <p className="text-sm text-slate-500 mt-1">mode: {kernelStatus?.mode ?? "n/a"}</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-6">
+          {kernelStatus ? Object.entries(kernelStatus.kernels).map(([name, kernel]) => (
+            <article key={name} className="rounded-xl border border-slate-100 p-4 bg-slate-50">
+              <div className="flex items-center justify-between">
+                <h4 className="font-semibold text-slate-800">{name}</h4>
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${kernel.healthy ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {kernel.healthy ? 'healthy' : 'unhealthy'}
+                </span>
+              </div>
+              <p className="text-sm text-slate-500 mt-2">role: {kernel.role}</p>
+              <p className="text-sm text-slate-500">origin: {kernel.origin || 'n/a'}</p>
+              {kernel.error ? <p className="text-sm text-red-500 mt-2">{kernel.error}</p> : null}
+            </article>
+          )) : <div className="text-slate-500">Loading kernels...</div>}
+        </div>
+      </div>
+
+      {error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
       
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100">
@@ -83,8 +128,8 @@ export default function AdminDashboard() {
                       <span className="px-2 py-1 rounded bg-indigo-50 text-indigo-700 text-xs font-semibold">{u.group || 'default'}</span>
                     </td>
                     <td className="px-6 py-3">
-                      <div className="font-semibold text-emerald-600">${u.balance.toFixed(2)}</div>
-                      <div className="text-xs text-slate-400 font-medium">Quota: {u.total_quota}</div>
+                      <div className="font-semibold text-emerald-600">${(u.balance ?? 0).toFixed(2)}</div>
+                      <div className="text-xs text-slate-400 font-medium">Quota: {u.total_quota ?? 0}</div>
                     </td>
                     <td className="px-6 py-3">
                       <div className="text-xs text-slate-600 font-medium">RPM: {u.rpm > 0 ? u.rpm : '∞'}</div>
