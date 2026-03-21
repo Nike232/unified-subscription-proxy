@@ -8,6 +8,5 @@ RUN go build -o control-plane ./apps/control-plane
 FROM alpine:3.21
 WORKDIR /app
 COPY --from=builder /app/control-plane .
-COPY --from=builder /app/data ./data
 EXPOSE 8080
 CMD ["./control-plane"]

@@ -26,10 +26,10 @@ jobs:
             dockerfile: apps/proxy-core-go/Dockerfile
             context: .
           - service: proxy-core-rust
-            dockerfile: Dockerfile
+            dockerfile: apps/proxy-core-rust/Dockerfile
             context: apps/proxy-core-rust
           - service: web
-            dockerfile: Dockerfile
+            dockerfile: apps/web/Dockerfile
             context: apps/web
 
     steps:
@@ -50,7 +50,8 @@ jobs:
 
       - name: Set Image Name Lowcase
         run: |
-          echo "IMAGE_NAME=ghcr.io/${{ github.repository_owner }}/unified-subscription-proxy-${{ matrix.service }}" | tr '[:upper:]' '[:lower:]' >> $GITHUB_ENV
+          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/unified-subscription-proxy-${{ matrix.service }}"
+          echo "IMAGE_NAME=$(printf '%s' "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
 
       - name: Show build target
         run: |
