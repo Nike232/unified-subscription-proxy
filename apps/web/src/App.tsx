@@ -14,7 +14,10 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import AdminAccountsPage from "./pages/AdminAccountsPage";
 import AdminPackagesPage from "./pages/AdminPackagesPage";
-import AdminUsageDebugPage from "./pages/AdminUsageDebugPage";
+import AdminSubscriptionsPage from "./pages/AdminSubscriptionsPage";
+import AdminKeysPage from "./pages/AdminKeysPage";
+import AdminUsagePage from "./pages/AdminUsagePage";
+import AdminDebugPage from "./pages/AdminDebugPage";
 
 function RequireAuth() {
   const { user, loading } = useAuth();
@@ -54,10 +57,10 @@ function App() {
                   <Route path="admin/users" element={<AdminUsersPage />} />
                   <Route path="admin/accounts" element={<AdminAccountsPage />} />
                   <Route path="admin/packages" element={<AdminPackagesPage />} />
-                  <Route path="admin/subscriptions" element={<AdminPackagesPage />} />
-                  <Route path="admin/keys" element={<AdminPackagesPage />} />
-                  <Route path="admin/usage" element={<AdminUsageDebugPage />} />
-                  <Route path="admin/debug" element={<AdminUsageDebugPage />} />
+                  <Route path="admin/subscriptions" element={<AdminSubscriptionsPage />} />
+                  <Route path="admin/keys" element={<AdminKeysPage />} />
+                  <Route path="admin/usage" element={<AdminUsagePage />} />
+                  <Route path="admin/debug" element={<AdminDebugPage />} />
                 </Route>
                 <Route path="user" element={<UserDashboard />} />
                 <Route path="user/catalog" element={<UserCatalogPage />} />

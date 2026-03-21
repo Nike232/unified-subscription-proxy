@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiFetch } from "../lib/api";
 
 interface User {
@@ -141,7 +142,9 @@ export default function AdminDashboard() {
                       </span>
                     </td>
                     <td className="px-6 py-3">
-                      <button className="text-blue-500 hover:text-blue-700 text-xs font-medium">编辑</button>
+                      <Link className="text-blue-500 hover:text-blue-700 text-xs font-medium" to="/admin/users">
+                        前往编辑
+                      </Link>
                     </td>
                   </tr>
                 ))

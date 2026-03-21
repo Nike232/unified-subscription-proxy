@@ -38,11 +38,20 @@ export default function RootLayout() {
               <Link to="/admin/accounts" className={navItemClass(location.pathname.startsWith("/admin/accounts"))}>
                 <Activity className="w-5 h-5" /> 账号池
               </Link>
-              <Link to="/admin/packages" className={navItemClass(location.pathname.startsWith("/admin/packages") || location.pathname.startsWith("/admin/subscriptions") || location.pathname.startsWith("/admin/keys"))}>
-                <Boxes className="w-5 h-5" /> 套餐与密钥
+              <Link to="/admin/packages" className={navItemClass(location.pathname.startsWith("/admin/packages"))}>
+                <Boxes className="w-5 h-5" /> 套餐管理
               </Link>
-              <Link to="/admin/usage" className={navItemClass(location.pathname.startsWith("/admin/usage") || location.pathname.startsWith("/admin/debug"))}>
-                <Bug className="w-5 h-5" /> 用量与调试
+              <Link to="/admin/subscriptions" className={navItemClass(location.pathname.startsWith("/admin/subscriptions"))}>
+                <PackageCheck className="w-5 h-5" /> 订阅管理
+              </Link>
+              <Link to="/admin/keys" className={navItemClass(location.pathname.startsWith("/admin/keys"))}>
+                <Key className="w-5 h-5" /> 密钥管理
+              </Link>
+              <Link to="/admin/usage" className={navItemClass(location.pathname.startsWith("/admin/usage"))}>
+                <BarChart2 className="w-5 h-5" /> 用量记录
+              </Link>
+              <Link to="/admin/debug" className={navItemClass(location.pathname.startsWith("/admin/debug"))}>
+                <Bug className="w-5 h-5" /> 调度调试
               </Link>
             </>
           ) : null}
