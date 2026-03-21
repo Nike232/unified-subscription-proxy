@@ -1,0 +1,50 @@
+services:
+  control-plane:
+    image: ghcr.io/nike232/unified-subscription-proxy-control-plane:${IMAGE_TAG:-main}
+    build: null
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      CONTROL_PLANE_ADDR: ":8080"
+      CONTROL_PLANE_STORE_BACKEND: postgres
+      DATABASE_URL: ${DATABASE_URL}
+      PROXY_CORE_MODE: ${PROXY_CORE_MODE:-go}
+      PROXY_CORE_PRIMARY: ${PROXY_CORE_PRIMARY:-go}
+      PROXY_CORE_GO_ORIGIN: ${PROXY_CORE_GO_ORIGIN:-http://proxy-core-go:8081}
+    volumes:
+      - control_plane_data:/app/data
+
+  proxy-core-go:
+    image: ghcr.io/nike232/unified-subscription-proxy-proxy-core-go:${IMAGE_TAG:-main}
+    build: null
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      CONTROL_PLANE_ORIGIN: http://control-plane:8080
+      PROXY_CORE_ADDR: ":8081"
+
+  web:
+    image: ghcr.io/nike232/unified-subscription-proxy-web:${IMAGE_TAG:-main}
+    build: null
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      CONTROL_PLANE_UPSTREAM: ${WEB_CONTROL_PLANE_UPSTREAM:-http://control-plane:8080}
+
+  db:
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+
+volumes:
+  control_plane_data:
+  pgdata_prod:
