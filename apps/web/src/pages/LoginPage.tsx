@@ -61,13 +61,13 @@ export default function LoginPage() {
             <p className="mt-2 text-sm text-slate-500">请输入账号与密码进入用户中心或管理后台。</p>
             <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
               <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-600">邮箱</span>
+                <span className="mb-2 block text-sm font-medium text-slate-600">账号 / 邮箱</span>
                 <input
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-blue-500 focus:bg-white"
-                  type="email"
+                  type="text"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  placeholder="you@example.com"
+                  placeholder="请输入账号或邮箱"
                   required
                 />
               </label>
