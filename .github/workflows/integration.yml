@@ -1,74 +1,37 @@
-name: CI
+name: Integration
 
 on:
   push:
     branches: ["main", "master"]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
-  go-test:
+  compose-smoke-heavy:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - name: Test Go packages
-        run: go test ./apps/control-plane ./apps/proxy-core-go ./internal/...
-      - name: Build Go services
-        run: go build ./apps/control-plane ./apps/proxy-core-go
-
-  rust-check:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/proxy-core-rust
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev build-essential sqlite3 libsqlite3-dev \
-            libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev librsvg2-dev cmake perl golang nodejs npm \
-            clang libclang-dev ninja-build
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/proxy-core-rust
-      - name: Cargo check
-        run: cargo check --locked
-
-  web-build:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/web
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-      - run: npm ci
-      - run: npm run build
-
-  compose-smoke-go:
-    runs-on: ubuntu-latest
-    needs: [go-test, rust-check, web-build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: rust
+            primary: rust
+            services: proxy-core-rust
+            primary_port: "8045"
+          - mode: dual
+            primary: go
+            services: "proxy-core-go proxy-core-rust"
+            primary_port: "8081"
     steps:
       - uses: actions/checkout@v4
       - name: Start compose stack
         env:
-          PROXY_CORE_MODE: go
-          PROXY_CORE_PRIMARY: go
+          PROXY_CORE_MODE: ${{ matrix.mode }}
+          PROXY_CORE_PRIMARY: ${{ matrix.primary }}
           CONTROL_PLANE_PUBLIC_ORIGIN: http://127.0.0.1:3000
           WEB_CONTROL_PLANE_UPSTREAM: http://control-plane:8080
           OPENAI_API_KEY: smoke-test-key
           OPENAI_BASE_URL: http://upstream-mock:9000
         run: |
-          docker compose --profile smoke up -d --build db upstream-mock control-plane web proxy-core-go
+          docker compose --profile smoke up -d --build db upstream-mock control-plane web ${{ matrix.services }}
       - name: Verify health and runtime catalog
         run: |
           python - <<'PY'
@@ -101,6 +64,8 @@ jobs:
           curl -fsS -b admin.cookies http://127.0.0.1:8080/api/admin/kernel-status >/tmp/kernel-status.json
           cat /tmp/kernel-status.json
       - name: Verify user checkout and API key flow
+        env:
+          PRIMARY_PORT: ${{ matrix.primary_port }}
         run: |
           curl -fsS -c user.cookies -H 'Content-Type: application/json' \
             -d '{"email":"demo@example.com","password":"demo123"}' \
@@ -136,7 +101,7 @@ jobs:
           API_KEY="$(cat /tmp/api-key.txt)"
           curl -fsS -H "Authorization: Bearer ${API_KEY}" -H 'Content-Type: application/json' \
             -d '{"model":"gpt-fast","messages":[{"role":"user","content":"ping"}]}' \
-            "http://127.0.0.1:8081/v1/chat/completions" >/tmp/chat.json
+            "http://127.0.0.1:${PRIMARY_PORT}/v1/chat/completions" >/tmp/chat.json
           cat /tmp/chat.json
           curl -fsS -b user.cookies "http://127.0.0.1:3000/api/user/usage-logs" >/tmp/usage.json
           python - <<'PY'
@@ -145,6 +110,34 @@ jobs:
           if not usage:
               raise SystemExit("expected usage logs after successful proxy call")
           print(json.dumps(usage[-1], ensure_ascii=False))
+          PY
+      - name: Verify dual primary switching
+        if: matrix.mode == 'dual'
+        env:
+          PROXY_CORE_MODE: dual
+          CONTROL_PLANE_PUBLIC_ORIGIN: http://127.0.0.1:3000
+          WEB_CONTROL_PLANE_UPSTREAM: http://control-plane:8080
+          OPENAI_API_KEY: smoke-test-key
+          OPENAI_BASE_URL: http://upstream-mock:9000
+        run: |
+          PROXY_CORE_PRIMARY=rust docker compose up -d control-plane
+          python - <<'PY'
+          import json
+          import time
+          import urllib.request
+          last = None
+          for _ in range(30):
+              try:
+                  with urllib.request.urlopen("http://127.0.0.1:8080/api/public/catalog", timeout=5) as resp:
+                      data = json.load(resp)
+                  if data.get("proxy_core_primary") == "rust":
+                      print(json.dumps(data, ensure_ascii=False))
+                      raise SystemExit(0)
+                  last = data
+              except Exception as exc:
+                  last = exc
+              time.sleep(2)
+          raise SystemExit(f"primary did not switch to rust: {last}")
           PY
       - name: Dump compose logs on failure
         if: failure()
