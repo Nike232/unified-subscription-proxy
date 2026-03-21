@@ -183,7 +183,7 @@ async fn auth_middleware_internal(
                         if let Ok(json) = resp.json::<serde_json::Value>().await {
                             identity_ext = Some(UserTokenIdentity {
                                 token_id: json["api_key"]["id"].as_str().unwrap_or("").to_string(),
-                                token: ak.clone(),
+                                token: (*ak).to_string(),
                                 username: json["api_key"]["user_id"].as_str().unwrap_or("").to_string(),
                                 rpm: json["rpm"].as_i64().unwrap_or(0),
                                 tpm: json["tpm"].as_i64().unwrap_or(0),
@@ -234,6 +234,10 @@ async fn auth_middleware_internal(
                         token_id: user_token.id,
                         token: user_token.token,
                         username: user_token.username,
+                        rpm: 0,
+                        tpm: 0,
+                        total_quota: 0.0,
+                        group_id: String::new(),
                     };
                     
                     // [FIX] 将身份信息注入到请求 extensions 中，而不是响应
