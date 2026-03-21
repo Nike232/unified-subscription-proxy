@@ -20,11 +20,7 @@ func New(st store.Store) *Service {
 	return &Service{store: st}
 }
 
-func (s *Service) Overview() (domain.Overview, error) {
-	data, err := s.store.Load()
-	if err != nil {
-		return domain.Overview{}, err
-	}
+func OverviewFromData(data domain.PlatformData) domain.Overview {
 	out := domain.Overview{
 		Providers: make(map[string]int),
 		Packages:  len(data.ServicePackages),
@@ -46,11 +42,27 @@ func (s *Service) Overview() (domain.Overview, error) {
 			out.ActiveSubs++
 		}
 	}
-	return out, nil
+	return out
+}
+
+func (s *Service) Overview() (domain.Overview, error) {
+	data, err := s.store.Load()
+	if err != nil {
+		return domain.Overview{}, err
+	}
+	return OverviewFromData(data), nil
 }
 
 func (s *Service) Data() (domain.PlatformData, error) {
 	return s.store.Load()
+}
+
+func (s *Service) ExplainDispatch(modelAlias, apiKey string) (DispatchTrace, error) {
+	data, err := s.store.Load()
+	if err != nil {
+		return DispatchTrace{}, err
+	}
+	return ExplainDispatchInData(data, modelAlias, apiKey)
 }
 
 func (s *Service) AddUpstreamAccount(acct domain.UpstreamAccount) (domain.UpstreamAccount, error) {
@@ -78,6 +90,33 @@ func (s *Service) AddUpstreamAccount(acct domain.UpstreamAccount) (domain.Upstre
 	return acct, err
 }
 
+func (s *Service) UpdateUser(id string, patch map[string]any) (domain.User, error) {
+	var updated domain.User
+	_, err := s.store.Mutate(func(data *domain.PlatformData) error {
+		for i := range data.Users {
+			if data.Users[i].ID != id {
+				continue
+			}
+			if v, ok := patch["status"].(string); ok && strings.TrimSpace(v) != "" {
+				data.Users[i].Status = v
+			}
+			if v, ok := patch["role"].(string); ok && strings.TrimSpace(v) != "" {
+				data.Users[i].Role = v
+			}
+			if v, ok := patch["balance"].(float64); ok {
+				data.Users[i].Balance = v
+			}
+			if v, ok := patch["concurrency"].(float64); ok {
+				data.Users[i].Concurrency = int(v)
+			}
+			updated = data.Users[i]
+			return nil
+		}
+		return errors.New("user not found")
+	})
+	return updated, err
+}
+
 func (s *Service) UpdateUpstreamAccount(id string, patch map[string]any) (domain.UpstreamAccount, error) {
 	var updated domain.UpstreamAccount
 	_, err := s.store.Mutate(func(data *domain.PlatformData) error {
@@ -90,6 +129,38 @@ func (s *Service) UpdateUpstreamAccount(id string, patch map[string]any) (domain
 			}
 			if v, ok := patch["tier"].(string); ok && strings.TrimSpace(v) != "" {
 				data.UpstreamAccounts[i].Tier = v
+			}
+			if v, ok := patch["display_name"].(string); ok && strings.TrimSpace(v) != "" {
+				data.UpstreamAccounts[i].DisplayName = v
+			}
+			if v, ok := patch["email"].(string); ok {
+				data.UpstreamAccounts[i].Email = strings.TrimSpace(v)
+			}
+			if v, ok := patch["auth_mode"].(string); ok && strings.TrimSpace(v) != "" {
+				data.UpstreamAccounts[i].AuthMode = v
+			}
+			if v, ok := patch["priority"].(float64); ok {
+				data.UpstreamAccounts[i].Priority = int(v)
+			}
+			if v, ok := patch["weight"].(float64); ok && int(v) > 0 {
+				data.UpstreamAccounts[i].Weight = int(v)
+			}
+			if v, ok := patch["supports_models"].([]any); ok {
+				models := make([]string, 0, len(v))
+				for _, raw := range v {
+					if model, ok := raw.(string); ok && strings.TrimSpace(model) != "" {
+						models = append(models, model)
+					}
+				}
+				data.UpstreamAccounts[i].SupportsModels = models
+			}
+			if v, ok := patch["meta"].(map[string]any); ok {
+				data.UpstreamAccounts[i].Meta = map[string]string{}
+				for key, raw := range v {
+					if value, ok := raw.(string); ok {
+						data.UpstreamAccounts[i].Meta[key] = value
+					}
+				}
 			}
 			data.UpstreamAccounts[i].LastRefreshedAt = time.Now().UTC()
 			updated = data.UpstreamAccounts[i]
@@ -106,6 +177,15 @@ func (s *Service) AddPackage(pkg domain.ServicePackage) (domain.ServicePackage, 
 	}
 	if pkg.DefaultConcurrency <= 0 {
 		pkg.DefaultConcurrency = 1
+	}
+	if strings.TrimSpace(pkg.DisplayName) == "" {
+		pkg.DisplayName = pkg.Name
+	}
+	if strings.TrimSpace(pkg.BillingCycle) == "" {
+		pkg.BillingCycle = "monthly"
+	}
+	if !pkg.IsActive {
+		pkg.IsActive = true
 	}
 	_, err := s.store.Mutate(func(data *domain.PlatformData) error {
 		data.ServicePackages = append(data.ServicePackages, pkg)
@@ -152,23 +232,51 @@ func (s *Service) CreateAPIKey(key domain.APIKey) (domain.APIKey, error) {
 	return key, err
 }
 
-func (s *Service) ValidateAPIKey(rawKey string) (domain.APIKey, domain.ServicePackage, error) {
+func (s *Service) ValidateAPIKey(rawKey string) (domain.APIKey, domain.ServicePackage, domain.User, error) {
 	data, err := s.store.Load()
 	if err != nil {
-		return domain.APIKey{}, domain.ServicePackage{}, err
+		return domain.APIKey{}, domain.ServicePackage{}, domain.User{}, err
 	}
+	return ValidateAPIKeyInData(data, rawKey)
+}
+
+func ValidateAPIKeyInData(data domain.PlatformData, rawKey string) (domain.APIKey, domain.ServicePackage, domain.User, error) {
 	for _, key := range data.APIKeys {
 		if key.Key != rawKey || key.Status != "active" {
 			continue
 		}
-		for _, pkg := range data.ServicePackages {
-			if pkg.ID == key.PackageID {
-				return key, pkg, nil
+		
+		var foundUser domain.User
+		for _, u := range data.Users {
+			if u.ID == key.UserID {
+				foundUser = u
+				if u.Status == "disabled" {
+					return domain.APIKey{}, domain.ServicePackage{}, domain.User{}, errors.New("user account disabled")
+				}
+				if u.Balance < 0 && u.Group != "gemini_vip" {
+					return domain.APIKey{}, domain.ServicePackage{}, domain.User{}, errors.New("insufficient balance")
+				}
+				if u.TotalQuota < 0 {
+					return domain.APIKey{}, domain.ServicePackage{}, domain.User{}, errors.New("insufficient quota")
+				}
+				break
 			}
 		}
-		return key, domain.ServicePackage{}, errors.New("package not found for api key")
+		if foundUser.ID == "" {
+			return domain.APIKey{}, domain.ServicePackage{}, domain.User{}, errors.New("user not found")
+		}
+
+		if !hasActiveSubscription(data, key.UserID, key.PackageID) {
+			return domain.APIKey{}, domain.ServicePackage{}, domain.User{}, errors.New("subscription inactive or expired for api key")
+		}
+		for _, pkg := range data.ServicePackages {
+			if pkg.ID == key.PackageID {
+				return key, pkg, foundUser, nil
+			}
+		}
+		return key, domain.ServicePackage{}, foundUser, errors.New("package not found for api key")
 	}
-	return domain.APIKey{}, domain.ServicePackage{}, errors.New("invalid api key")
+	return domain.APIKey{}, domain.ServicePackage{}, domain.User{}, errors.New("invalid api key")
 }
 
 func (s *Service) ResolveDispatch(modelAlias, apiKey string) (DispatchResult, error) {
@@ -177,9 +285,60 @@ func (s *Service) ResolveDispatch(modelAlias, apiKey string) (DispatchResult, er
 		return DispatchResult{}, err
 	}
 
-	key, pkg, err := s.ValidateAPIKey(apiKey)
+	result, usageLog, err := ResolveDispatchInData(data, modelAlias, apiKey)
 	if err != nil {
 		return DispatchResult{}, err
+	}
+
+	_, _ = s.store.Mutate(func(data *domain.PlatformData) error {
+		for i := range data.APIKeys {
+			if data.APIKeys[i].ID == result.APIKeyID {
+				data.APIKeys[i].LastUsedAt = time.Now().UTC()
+				break
+			}
+		}
+		data.UsageLogs = append(data.UsageLogs, usageLog)
+		return nil
+	})
+
+	return result, nil
+}
+
+func ResolveDispatchInData(data domain.PlatformData, modelAlias, apiKey string) (DispatchResult, domain.UsageLog, error) {
+	trace, err := ExplainDispatchInData(data, modelAlias, apiKey)
+	if err != nil {
+		return DispatchResult{}, domain.UsageLog{}, err
+	}
+	selected := trace.Selected
+	key := trace.APIKey
+	result := DispatchResult{
+		APIKeyID:       key.ID,
+		PackageID:      key.PackageID,
+		ModelAlias:     modelAlias,
+		Provider:       selected.Provider,
+		AccountID:      selected.AccountID,
+		UpstreamModel:  selected.UpstreamModel,
+		CandidateCount: len(trace.Candidates),
+	}
+	usageLog := domain.UsageLog{
+		ID:            "log-" + randomID(6),
+		APIKeyID:      key.ID,
+		UserID:        key.UserID,
+		ModelAlias:    modelAlias,
+		Provider:      selected.Provider,
+		AccountID:     selected.AccountID,
+		UpstreamModel: selected.UpstreamModel,
+		Status:        "dispatched",
+		RequestKind:   "chat_completions",
+		CreatedAt:     time.Now().UTC(),
+	}
+	return result, usageLog, nil
+}
+
+func ExplainDispatchInData(data domain.PlatformData, modelAlias, apiKey string) (DispatchTrace, error) {
+	key, pkg, _, err := ValidateAPIKeyInData(data, apiKey)
+	if err != nil {
+		return DispatchTrace{}, err
 	}
 
 	allowedProviders := map[string]domain.ProviderAccess{}
@@ -195,7 +354,7 @@ func (s *Service) ResolveDispatch(modelAlias, apiKey string) (DispatchResult, er
 		}
 	}
 	if policy == nil {
-		return DispatchResult{}, errors.New("model alias not found")
+		return DispatchTrace{}, errors.New("model alias not found")
 	}
 
 	targets := append([]domain.ModelTarget(nil), policy.Targets...)
@@ -204,25 +363,47 @@ func (s *Service) ResolveDispatch(modelAlias, apiKey string) (DispatchResult, er
 	})
 
 	var candidates []Candidate
+	now := time.Now().UTC()
 	for _, target := range targets {
 		access, ok := allowedProviders[target.Provider]
 		if !ok || !contains(access.Models, modelAlias) {
 			continue
 		}
 		for _, acct := range data.UpstreamAccounts {
-			if acct.Provider != target.Provider || acct.Status != domain.AccountStatusActive {
+			if acct.Provider != target.Provider {
 				continue
 			}
-			if !contains(acct.SupportsModels, target.UpstreamModel) {
-				continue
-			}
-			candidates = append(candidates, Candidate{
+			candidate := Candidate{
 				AccountID:     acct.ID,
 				Provider:      acct.Provider,
 				UpstreamModel: target.UpstreamModel,
 				Priority:      acct.Priority + target.Priority,
 				Weight:        acct.Weight,
-			})
+				AccountStatus: acct.Status,
+			}
+			if expiresAt, ok := AccountExpiresAt(acct); ok {
+				candidate.ExpiresAt = expiresAt
+			}
+			if cooldownUntil, ok := AccountCooldownUntil(acct); ok {
+				candidate.CooldownUntil = cooldownUntil
+			}
+			candidate.CanRefresh = AccountCanRefresh(acct)
+			candidate.ConsecutiveFails = AccountConsecutiveFailures(acct)
+			candidate.LastRefreshError = strings.TrimSpace(acct.Meta["last_refresh_error"])
+			candidate.LastFailureReason = strings.TrimSpace(acct.Meta["last_failure_reason"])
+			switch {
+			case acct.Status == domain.AccountStatusDisabled:
+				candidate.SkipReason = "disabled"
+			case acct.Status == domain.AccountStatusInvalid:
+				candidate.SkipReason = "invalid"
+			case AccountInCooldown(acct, now):
+				candidate.SkipReason = "cooldown"
+			case AccountExpired(acct, now) && !candidate.CanRefresh:
+				candidate.SkipReason = "expired"
+			case !contains(acct.SupportsModels, target.UpstreamModel):
+				candidate.SkipReason = "model_not_supported"
+			}
+			candidates = append(candidates, candidate)
 		}
 		if len(candidates) > 0 && !pkg.AllowCrossProviderFallback {
 			break
@@ -230,7 +411,7 @@ func (s *Service) ResolveDispatch(modelAlias, apiKey string) (DispatchResult, er
 	}
 
 	if len(candidates) == 0 {
-		return DispatchResult{}, errors.New("no available upstream account for alias under current package")
+		return DispatchTrace{}, errors.New("no available upstream account for alias under current package")
 	}
 
 	sort.SliceStable(candidates, func(i, j int) bool {
@@ -240,47 +421,142 @@ func (s *Service) ResolveDispatch(modelAlias, apiKey string) (DispatchResult, er
 		return candidates[i].Priority > candidates[j].Priority
 	})
 
-	selected := candidates[0]
-	result := DispatchResult{
-		APIKeyID:       key.ID,
-		PackageID:      pkg.ID,
-		ModelAlias:     modelAlias,
-		Provider:       selected.Provider,
-		AccountID:      selected.AccountID,
-		UpstreamModel:  selected.UpstreamModel,
-		CandidateCount: len(candidates),
+	selected := Candidate{}
+	foundSelected := false
+	for _, candidate := range candidates {
+		if candidate.SkipReason == "" {
+			selected = candidate
+			foundSelected = true
+			break
+		}
+	}
+	if !foundSelected {
+		return DispatchTrace{}, errors.New("no available upstream account for alias under current package")
 	}
 
-	_, _ = s.store.Mutate(func(data *domain.PlatformData) error {
+	return DispatchTrace{
+		ModelAlias: modelAlias,
+		APIKey:     key,
+		Package:    pkg,
+		Candidates: candidates,
+		Selected:   selected,
+	}, nil
+}
+
+func (s *Service) AppendUsageLog(log domain.UsageLog) error {
+	_, err := s.store.Mutate(func(data *domain.PlatformData) error {
 		for i := range data.APIKeys {
-			if data.APIKeys[i].ID == key.ID {
-				data.APIKeys[i].LastUsedAt = time.Now().UTC()
+			if data.APIKeys[i].ID == log.APIKeyID {
+				data.APIKeys[i].LastUsedAt = log.CreatedAt
 				break
 			}
 		}
-		data.UsageLogs = append(data.UsageLogs, domain.UsageLog{
-			ID:            "log-" + randomID(6),
-			APIKeyID:      key.ID,
-			UserID:        key.UserID,
-			ModelAlias:    modelAlias,
-			Provider:      selected.Provider,
-			AccountID:     selected.AccountID,
-			UpstreamModel: selected.UpstreamModel,
-			Status:        "dispatched",
-			CreatedAt:     time.Now().UTC(),
-		})
+
+		var userGroup string
+		var userIdx int = -1
+		for i := range data.Users {
+			if data.Users[i].ID == log.UserID {
+				userIdx = i
+				userGroup = data.Users[i].Group
+				break
+			}
+		}
+
+		// Subscription group rules
+		if userGroup == "gemini_vip" && strings.HasPrefix(strings.ToLower(log.ModelAlias), "gemini") {
+			log.Cost = 0 // Zero deduct for gemini monthly passes
+		} else if log.Cost == 0 && log.TotalTokens > 0 {
+			// Mock cost calculation: $0.002 per 1000 tokens
+			log.Cost = float64(log.TotalTokens) * 0.000002
+		}
+
+		if userIdx >= 0 {
+			if log.Cost > 0 {
+				data.Users[userIdx].Balance -= log.Cost
+			}
+			if log.TotalTokens > 0 {
+				// Deduct tokens from TotalQuota
+				data.Users[userIdx].TotalQuota -= float64(log.TotalTokens)
+			}
+		}
+		data.UsageLogs = append(data.UsageLogs, log)
 		return nil
 	})
+	return err
+}
 
-	return result, nil
+func (s *Service) ListUsageLogs(provider, alias, status string) ([]domain.UsageLog, error) {
+	data, err := s.store.Load()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.UsageLog, 0)
+	for i := len(data.UsageLogs) - 1; i >= 0; i-- {
+		logEntry := data.UsageLogs[i]
+		if provider != "" && logEntry.Provider != provider {
+			continue
+		}
+		if alias != "" && logEntry.ModelAlias != alias {
+			continue
+		}
+		if status != "" && logEntry.Status != status {
+			continue
+		}
+		out = append(out, logEntry)
+	}
+	return out, nil
+}
+
+func (s *Service) ListUsageLogsFiltered(provider, alias, status, errorType, accountID string) ([]domain.UsageLog, error) {
+	data, err := s.store.Load()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.UsageLog, 0)
+	for i := len(data.UsageLogs) - 1; i >= 0; i-- {
+		logEntry := data.UsageLogs[i]
+		if provider != "" && logEntry.Provider != provider {
+			continue
+		}
+		if alias != "" && logEntry.ModelAlias != alias {
+			continue
+		}
+		if status != "" && logEntry.Status != status {
+			continue
+		}
+		if errorType != "" && logEntry.ErrorType != errorType {
+			continue
+		}
+		if accountID != "" && logEntry.AccountID != accountID {
+			continue
+		}
+		out = append(out, logEntry)
+	}
+	return out, nil
 }
 
 type Candidate struct {
-	AccountID     string `json:"account_id"`
-	Provider      string `json:"provider"`
-	UpstreamModel string `json:"upstream_model"`
-	Priority      int    `json:"priority"`
-	Weight        int    `json:"weight"`
+	AccountID         string    `json:"account_id"`
+	Provider          string    `json:"provider"`
+	UpstreamModel     string    `json:"upstream_model"`
+	Priority          int       `json:"priority"`
+	Weight            int       `json:"weight"`
+	AccountStatus     string    `json:"account_status,omitempty"`
+	ExpiresAt         time.Time `json:"expires_at,omitempty"`
+	CooldownUntil     time.Time `json:"cooldown_until,omitempty"`
+	CanRefresh        bool      `json:"can_refresh,omitempty"`
+	ConsecutiveFails  int       `json:"consecutive_failures,omitempty"`
+	LastRefreshError  string    `json:"last_refresh_error,omitempty"`
+	LastFailureReason string    `json:"last_failure_reason,omitempty"`
+	SkipReason        string    `json:"skip_reason,omitempty"`
+}
+
+type DispatchTrace struct {
+	ModelAlias string                `json:"model_alias"`
+	APIKey     domain.APIKey         `json:"api_key"`
+	Package    domain.ServicePackage `json:"package"`
+	Candidates []Candidate           `json:"candidates"`
+	Selected   Candidate             `json:"selected"`
 }
 
 type DispatchResult struct {
