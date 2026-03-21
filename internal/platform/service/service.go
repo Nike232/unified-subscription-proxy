@@ -103,6 +103,15 @@ func (s *Service) UpdateUser(id string, patch map[string]any) (domain.User, erro
 			if v, ok := patch["role"].(string); ok && strings.TrimSpace(v) != "" {
 				data.Users[i].Role = v
 			}
+			if v, ok := patch["email"].(string); ok && strings.TrimSpace(v) != "" {
+				data.Users[i].Email = strings.TrimSpace(v)
+			}
+			if v, ok := patch["name"].(string); ok && strings.TrimSpace(v) != "" {
+				data.Users[i].Name = strings.TrimSpace(v)
+			}
+			if v, ok := patch["password"].(string); ok && strings.TrimSpace(v) != "" {
+				data.Users[i].PasswordHash = v
+			}
 			if v, ok := patch["balance"].(float64); ok {
 				data.Users[i].Balance = v
 			}
@@ -245,7 +254,7 @@ func ValidateAPIKeyInData(data domain.PlatformData, rawKey string) (domain.APIKe
 		if key.Key != rawKey || key.Status != "active" {
 			continue
 		}
-		
+
 		var foundUser domain.User
 		for _, u := range data.Users {
 			if u.ID == key.UserID {

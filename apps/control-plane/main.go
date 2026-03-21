@@ -395,6 +395,56 @@ func main() {
 		}
 	}))
 
+	mux.HandleFunc("/api/admin/orders", requireRole(svc, "admin", func(w http.ResponseWriter, r *http.Request, _ domain.User) {
+		if r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		orders, err := svc.ListOrdersFiltered(
+			strings.TrimSpace(r.URL.Query().Get("user_id")),
+			strings.TrimSpace(r.URL.Query().Get("status")),
+		)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, orders)
+	}))
+
+	mux.HandleFunc("/api/admin/orders/", requireRole(svc, "admin", func(w http.ResponseWriter, r *http.Request, _ domain.User) {
+		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/confirm-payment") {
+			http.NotFound(w, r)
+			return
+		}
+		orderID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/admin/orders/"), "/confirm-payment")
+		if orderID == "" {
+			writeError(w, http.StatusBadRequest, errString("missing order id"))
+			return
+		}
+		result, err := svc.AdminConfirmOrderPayment(orderID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	}))
+
+	mux.HandleFunc("/api/admin/payments", requireRole(svc, "admin", func(w http.ResponseWriter, r *http.Request, _ domain.User) {
+		if r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		payments, err := svc.ListPaymentsFiltered(
+			strings.TrimSpace(r.URL.Query().Get("user_id")),
+			strings.TrimSpace(r.URL.Query().Get("status")),
+		)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, payments)
+	}))
+
 	mux.HandleFunc("/api/admin/usage-logs", requireRole(svc, "admin", func(w http.ResponseWriter, r *http.Request, _ domain.User) {
 		if r.Method != http.MethodGet {
 			http.NotFound(w, r)

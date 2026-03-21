@@ -398,6 +398,62 @@ func (s *Service) UserCheckoutResult(userID, orderID string) (CheckoutResult, er
 	return result, nil
 }
 
+func (s *Service) ListOrdersFiltered(userID, status string) ([]domain.Order, error) {
+	data, err := s.store.Load()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.Order, 0)
+	for i := len(data.Orders) - 1; i >= 0; i-- {
+		order := data.Orders[i]
+		if userID != "" && order.UserID != userID {
+			continue
+		}
+		if status != "" && order.Status != status {
+			continue
+		}
+		out = append(out, order)
+	}
+	return out, nil
+}
+
+func (s *Service) ListPaymentsFiltered(userID, status string) ([]domain.Payment, error) {
+	data, err := s.store.Load()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.Payment, 0)
+	for i := len(data.Payments) - 1; i >= 0; i-- {
+		payment := data.Payments[i]
+		if userID != "" && payment.UserID != userID {
+			continue
+		}
+		if status != "" && payment.Status != status {
+			continue
+		}
+		out = append(out, payment)
+	}
+	return out, nil
+}
+
+func (s *Service) AdminConfirmOrderPayment(orderID string) (CheckoutResult, error) {
+	data, err := s.store.Load()
+	if err != nil {
+		return CheckoutResult{}, err
+	}
+	var order domain.Order
+	for _, candidate := range data.Orders {
+		if candidate.ID == orderID {
+			order = candidate
+			break
+		}
+	}
+	if order.ID == "" {
+		return CheckoutResult{}, errors.New("order not found")
+	}
+	return s.ConfirmUserOrderPayment(order.UserID, order.ID)
+}
+
 func (s *Service) CompletePayment(paymentID, providerRef string) (CheckoutResult, error) {
 	var result CheckoutResult
 	_, err := s.store.Mutate(func(data *domain.PlatformData) error {

@@ -103,3 +103,33 @@ func TestRevokeUserAPIKey(t *testing.T) {
 		t.Fatalf("expected revoked key, got %#v", key)
 	}
 }
+
+func TestUpdateUserAllowsIdentityFields(t *testing.T) {
+	svc := New(store.NewFileStore(filepath.Join(t.TempDir(), "platform.json")))
+	user, err := svc.UpdateUser("user-demo", map[string]any{
+		"email":    "changed@example.com",
+		"name":     "Changed User",
+		"password": "new-password",
+	})
+	if err != nil {
+		t.Fatalf("UpdateUser returned error: %v", err)
+	}
+	if user.Email != "changed@example.com" || user.Name != "Changed User" || user.PasswordHash != "new-password" {
+		t.Fatalf("unexpected updated user: %#v", user)
+	}
+}
+
+func TestAdminConfirmOrderPayment(t *testing.T) {
+	svc := New(store.NewFileStore(filepath.Join(t.TempDir(), "platform.json")))
+	checkout, err := svc.CreateCheckoutOrder("user-demo", "pkg-basic", "", true, false, "http://127.0.0.1:8080")
+	if err != nil {
+		t.Fatalf("CreateCheckoutOrder returned error: %v", err)
+	}
+	completed, err := svc.AdminConfirmOrderPayment(checkout.Order.ID)
+	if err != nil {
+		t.Fatalf("AdminConfirmOrderPayment returned error: %v", err)
+	}
+	if completed.Order.Status != "paid" || completed.Payment.Status != "paid" {
+		t.Fatalf("expected paid result, got %#v %#v", completed.Order, completed.Payment)
+	}
+}

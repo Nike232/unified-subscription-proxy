@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
-import { LogOut, ShoppingCart, PackageCheck, Users, Activity, BarChart2, Key, WalletCards } from "lucide-react";
+import { LogOut, ShoppingCart, PackageCheck, Users, Activity, BarChart2, Key, WalletCards, Boxes, Bug } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 
 export default function RootLayout() {
@@ -31,6 +31,18 @@ export default function RootLayout() {
               </div>
               <Link to="/admin" className={navItemClass(location.pathname === "/admin")}>
                 <Users className="w-5 h-5" /> 管理总览
+              </Link>
+              <Link to="/admin/users" className={navItemClass(location.pathname.startsWith("/admin/users"))}>
+                <Users className="w-5 h-5" /> 用户管理
+              </Link>
+              <Link to="/admin/accounts" className={navItemClass(location.pathname.startsWith("/admin/accounts"))}>
+                <Activity className="w-5 h-5" /> 账号池
+              </Link>
+              <Link to="/admin/packages" className={navItemClass(location.pathname.startsWith("/admin/packages") || location.pathname.startsWith("/admin/subscriptions") || location.pathname.startsWith("/admin/keys"))}>
+                <Boxes className="w-5 h-5" /> 套餐与密钥
+              </Link>
+              <Link to="/admin/usage" className={navItemClass(location.pathname.startsWith("/admin/usage") || location.pathname.startsWith("/admin/debug"))}>
+                <Bug className="w-5 h-5" /> 用量与调试
               </Link>
             </>
           ) : null}

@@ -2,28 +2,36 @@ package main
 
 import (
 	"context"
+	"net"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 )
 
 func TestProbeKernelStatus(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/healthz" {
 			http.NotFound(w, r)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	}))
+	})
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("skipping kernel probe test because local listen is unavailable: %v", err)
+	}
+	server := &http.Server{Handler: handler}
 	defer server.Close()
+	go func() {
+		_ = server.Serve(listener)
+	}()
 
 	cfg := proxyRuntimeConfig{
 		Mode:          "dual",
 		Primary:       "go",
-		PrimaryOrigin: server.URL,
+		PrimaryOrigin: "http://" + listener.Addr().String(),
 		Origins: map[string]string{
-			"go":   server.URL,
+			"go":   "http://" + listener.Addr().String(),
 			"rust": "http://127.0.0.1:65534",
 		},
 	}

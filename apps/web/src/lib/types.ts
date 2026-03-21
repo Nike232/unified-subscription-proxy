@@ -93,3 +93,117 @@ export interface UserProfile {
   orders: UserOrderItem[];
   payments: PaymentDetail[];
 }
+
+export interface KernelStatus {
+  mode: string;
+  primary: string;
+  kernels: Record<string, {
+    origin: string;
+    healthy: boolean;
+    configured: boolean;
+    role: string;
+    error?: string;
+  }>;
+}
+
+export interface AdminUserItem {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  status: string;
+  balance: number;
+  group: string;
+  total_quota: number;
+  rpm: number;
+  tpm: number;
+  concurrency: number;
+}
+
+export interface AdminUpstreamAccountItem {
+  id: string;
+  provider: string;
+  display_name: string;
+  email: string;
+  auth_mode: string;
+  status: string;
+  tier: string;
+  weight: number;
+  priority: number;
+  supports_models: string[];
+  meta?: Record<string, string>;
+  last_refreshed_at?: string;
+}
+
+export interface AdminPackageItem {
+  id: string;
+  name: string;
+  display_name?: string;
+  tier?: string;
+  description: string;
+  price_cents: number;
+  billing_cycle?: string;
+  is_active: boolean;
+  provider_access: Array<{
+    provider: string;
+    models: string[];
+  }>;
+}
+
+export interface AdminSubscriptionItem {
+  id: string;
+  user_id: string;
+  package_id: string;
+  order_id?: string;
+  status: string;
+  starts_at: string;
+  expires_at: string;
+  auto_renew?: boolean;
+}
+
+export interface AdminAPIKeyItem {
+  id: string;
+  key: string;
+  user_id: string;
+  package_id: string;
+  status: string;
+  created_at: string;
+  last_used_at?: string;
+}
+
+export interface AdminUsageLogItem extends UserUsageLogItem {
+  api_key_id?: string;
+  user_id?: string;
+  account_id?: string;
+}
+
+export interface AdminOrderItem extends UserOrderItem {
+  user_id: string;
+}
+
+export interface AdminPaymentItem extends PaymentDetail {
+  user_id: string;
+  provider: string;
+  webhook_status?: string;
+}
+
+export interface DispatchDebugResult {
+  model_alias: string;
+  package_id: string;
+  selected_account_id: string;
+  selected_provider: string;
+  upstream_model: string;
+  fallback_allowed: boolean;
+  candidates: Array<{
+    account_id: string;
+    provider: string;
+    upstream_model: string;
+    account_status?: string;
+    skip_reason?: string;
+    can_refresh?: boolean;
+    role?: string;
+    cooldown_until?: string;
+    consecutive_failures?: number;
+    last_failure_reason?: string;
+  }>;
+}

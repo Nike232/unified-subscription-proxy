@@ -10,6 +10,11 @@ import UserSubscriptionsPage from "./pages/UserSubscriptionsPage";
 import UserKeysPage from "./pages/UserKeysPage";
 import UserUsagePage from "./pages/UserUsagePage";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import AdminUsersPage from "./pages/AdminUsersPage";
+import AdminAccountsPage from "./pages/AdminAccountsPage";
+import AdminPackagesPage from "./pages/AdminPackagesPage";
+import AdminUsageDebugPage from "./pages/AdminUsageDebugPage";
 
 function RequireAuth() {
   const { user, loading } = useAuth();
@@ -36,28 +41,37 @@ function RequireAdmin() {
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route element={<RequireAuth />}>
-            <Route path="/" element={<RootLayout />}>
-              <Route index element={<Navigate to="/user" replace />} />
-              <Route element={<RequireAdmin />}>
-                <Route path="admin" element={<AdminDashboard />} />
+    <ErrorBoundary>
+      <AuthProvider>
+        <Router>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route element={<RequireAuth />}>
+              <Route path="/" element={<RootLayout />}>
+                <Route index element={<Navigate to="/user" replace />} />
+                <Route element={<RequireAdmin />}>
+                  <Route path="admin" element={<AdminDashboard />} />
+                  <Route path="admin/users" element={<AdminUsersPage />} />
+                  <Route path="admin/accounts" element={<AdminAccountsPage />} />
+                  <Route path="admin/packages" element={<AdminPackagesPage />} />
+                  <Route path="admin/subscriptions" element={<AdminPackagesPage />} />
+                  <Route path="admin/keys" element={<AdminPackagesPage />} />
+                  <Route path="admin/usage" element={<AdminUsageDebugPage />} />
+                  <Route path="admin/debug" element={<AdminUsageDebugPage />} />
+                </Route>
+                <Route path="user" element={<UserDashboard />} />
+                <Route path="user/catalog" element={<UserCatalogPage />} />
+                <Route path="user/orders" element={<UserOrdersPage />} />
+                <Route path="user/orders/:orderId" element={<UserOrderDetailPage />} />
+                <Route path="user/subscriptions" element={<UserSubscriptionsPage />} />
+                <Route path="user/keys" element={<UserKeysPage />} />
+                <Route path="user/usage" element={<UserUsagePage />} />
               </Route>
-              <Route path="user" element={<UserDashboard />} />
-              <Route path="user/catalog" element={<UserCatalogPage />} />
-              <Route path="user/orders" element={<UserOrdersPage />} />
-              <Route path="user/orders/:orderId" element={<UserOrderDetailPage />} />
-              <Route path="user/subscriptions" element={<UserSubscriptionsPage />} />
-              <Route path="user/keys" element={<UserKeysPage />} />
-              <Route path="user/usage" element={<UserUsagePage />} />
             </Route>
-          </Route>
-        </Routes>
-      </Router>
-    </AuthProvider>
+          </Routes>
+        </Router>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
