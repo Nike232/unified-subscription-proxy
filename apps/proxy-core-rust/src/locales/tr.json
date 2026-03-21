@@ -1,0 +1,13 @@
+{
+  "tray": {
+    "current": "Mevcut",
+    "quota": "Kota",
+    "switch_next": "Sonraki Hesaba Geç",
+    "refresh_current": "Geçerli Kotayı Yenile",
+    "show_window": "Ana Pencereyi Göster",
+    "quit": "Uygulamadan Çık",
+    "no_account": "Hesap Yok",
+    "unknown_quota": "Bilinmiyor",
+    "forbidden": "Hesap Yasaklandı"
+  }
+}
