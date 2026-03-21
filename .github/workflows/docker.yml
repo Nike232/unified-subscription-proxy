@@ -1,24 +1,53 @@
-name: Docker
+name: Docker Build & Push
 
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     tags:
       - "v*"
 
 jobs:
-  docker-build:
+  build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
-        service: [control-plane, proxy-core]
+        service: [control-plane, proxy-core, web]
+        include:
+          - service: control-plane
+            dockerfile: apps/control-plane/Dockerfile
+          - service: proxy-core
+            dockerfile: apps/proxy-core-rust/Dockerfile
+          - service: web
+            dockerfile: apps/web/Dockerfile
+
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/unified-subscription-proxy-${{ matrix.service }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
         with:
           context: .
-          file: deploy/Dockerfile.${{ matrix.service }}
-          push: false
-          tags: unified-subscription-proxy/${{ matrix.service }}:latest
-
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
