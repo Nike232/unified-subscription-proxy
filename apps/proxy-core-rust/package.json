@@ -1,0 +1,9 @@
+{
+  "name": "proxy-core-rust-build-shell",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "node -e \"console.log('proxy-core-rust frontend placeholder build')\"",
+    "dev": "node -e \"console.log('proxy-core-rust frontend placeholder dev')\""
+  }
+}
