@@ -28,6 +28,19 @@ type CheckoutResult struct {
 	APIKey  *domain.APIKey `json:"api_key,omitempty"`
 }
 
+type UserCatalogItem struct {
+	domain.ServicePackage
+	IsSubscribed bool   `json:"is_subscribed"`
+	UserStatus   string `json:"user_status,omitempty"`
+}
+
+type UserOrderDetail struct {
+	Order        domain.Order           `json:"order"`
+	Payment      *domain.Payment        `json:"payment,omitempty"`
+	Package      *domain.ServicePackage `json:"package,omitempty"`
+	Subscription *domain.Subscription   `json:"subscription,omitempty"`
+}
+
 func (s *Service) AuthenticateUser(email, password string) (domain.User, domain.AuthSession, error) {
 	var user domain.User
 	var session domain.AuthSession
@@ -168,18 +181,96 @@ func (s *Service) UserUsageLogs(userID string) ([]domain.UsageLog, error) {
 	return out, nil
 }
 
-func (s *Service) UserPackages() ([]domain.ServicePackage, error) {
+func (s *Service) UserPackages(userID string) ([]UserCatalogItem, error) {
 	data, err := s.store.Load()
 	if err != nil {
 		return nil, err
 	}
-	out := make([]domain.ServicePackage, 0)
+	subscriptionStatus := map[string]string{}
+	now := time.Now().UTC()
+	for _, sub := range data.Subscriptions {
+		if sub.UserID != userID {
+			continue
+		}
+		status := sub.Status
+		if status == domain.SubscriptionStatusActive && !sub.ExpiresAt.After(now) {
+			status = domain.SubscriptionStatusExpired
+		}
+		subscriptionStatus[sub.PackageID] = status
+	}
+	out := make([]UserCatalogItem, 0)
 	for _, pkg := range data.ServicePackages {
 		if pkg.IsActive {
-			out = append(out, pkg)
+			status, ok := subscriptionStatus[pkg.ID]
+			out = append(out, UserCatalogItem{
+				ServicePackage: pkg,
+				IsSubscribed:   ok && status == domain.SubscriptionStatusActive,
+				UserStatus:     status,
+			})
 		}
 	}
 	return out, nil
+}
+
+func (s *Service) UserSubscriptions(userID string) ([]domain.Subscription, error) {
+	data, err := s.store.Load()
+	if err != nil {
+		return nil, err
+	}
+	profile, err := userProfileFromData(data, userID)
+	if err != nil {
+		return nil, err
+	}
+	return profile.Subscriptions, nil
+}
+
+func (s *Service) UserOrderDetail(userID, orderID string) (UserOrderDetail, error) {
+	data, err := s.store.Load()
+	if err != nil {
+		return UserOrderDetail{}, err
+	}
+
+	var detail UserOrderDetail
+	for _, order := range data.Orders {
+		if order.ID == orderID && order.UserID == userID {
+			detail.Order = order
+			break
+		}
+	}
+	if detail.Order.ID == "" {
+		return UserOrderDetail{}, errors.New("order not found")
+	}
+
+	for _, payment := range data.Payments {
+		if payment.ID == detail.Order.PaymentID {
+			copy := payment
+			detail.Payment = &copy
+			break
+		}
+	}
+
+	for _, pkg := range data.ServicePackages {
+		if pkg.ID == detail.Order.PackageID {
+			copy := pkg
+			detail.Package = &copy
+			break
+		}
+	}
+
+	if detail.Order.SubscriptionID != "" {
+		for _, sub := range data.Subscriptions {
+			if sub.ID == detail.Order.SubscriptionID {
+				copy := sub
+				if copy.Status == domain.SubscriptionStatusActive && !copy.ExpiresAt.After(time.Now().UTC()) {
+					copy.Status = domain.SubscriptionStatusExpired
+				}
+				detail.Subscription = &copy
+				break
+			}
+		}
+	}
+
+	return detail, nil
 }
 
 func (s *Service) CreateCheckoutOrder(userID, packageID, bindAPIKeyID string, createAPIKey, autoRenew bool, checkoutBaseURL string) (CheckoutResult, error) {
@@ -244,6 +335,67 @@ func (s *Service) CreateCheckoutOrder(userID, packageID, bindAPIKeyID string, cr
 		return nil
 	})
 	return result, err
+}
+
+func (s *Service) ConfirmUserOrderPayment(userID, orderID string) (CheckoutResult, error) {
+	data, err := s.store.Load()
+	if err != nil {
+		return CheckoutResult{}, err
+	}
+
+	var order domain.Order
+	for _, candidate := range data.Orders {
+		if candidate.ID == orderID && candidate.UserID == userID {
+			order = candidate
+			break
+		}
+	}
+	if order.ID == "" {
+		return CheckoutResult{}, errors.New("order not found")
+	}
+	if strings.TrimSpace(order.PaymentID) == "" {
+		return CheckoutResult{}, errors.New("payment not found")
+	}
+
+	for _, payment := range data.Payments {
+		if payment.ID != order.PaymentID {
+			continue
+		}
+		if payment.Status == "paid" {
+			return s.UserCheckoutResult(userID, orderID)
+		}
+		break
+	}
+
+	return s.CompletePayment(order.PaymentID, "manual-confirmed")
+}
+
+func (s *Service) UserCheckoutResult(userID, orderID string) (CheckoutResult, error) {
+	detail, err := s.UserOrderDetail(userID, orderID)
+	if err != nil {
+		return CheckoutResult{}, err
+	}
+	result := CheckoutResult{
+		Order: detail.Order,
+	}
+	if detail.Payment != nil {
+		result.Payment = *detail.Payment
+	}
+	if detail.Order.CreateAPIKey {
+		profile, err := s.UserProfile(userID)
+		if err != nil {
+			return CheckoutResult{}, err
+		}
+		for i := len(profile.APIKeys) - 1; i >= 0; i-- {
+			key := profile.APIKeys[i]
+			if key.PackageID == detail.Order.PackageID {
+				copy := key
+				result.APIKey = &copy
+				break
+			}
+		}
+	}
+	return result, nil
 }
 
 func (s *Service) CompletePayment(paymentID, providerRef string) (CheckoutResult, error) {

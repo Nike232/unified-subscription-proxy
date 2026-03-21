@@ -1,14 +1,8 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiFetch } from "../lib/api";
-
-interface UserProfile {
-  user: {
-    email: string;
-    role: string;
-  };
-  subscriptions: Array<{ id: string; package_id: string; status: string; expires_at: string }>;
-  api_keys: Array<{ id: string; status: string; last_used_at?: string }>;
-}
+import { formatDate, mapSubscriptionStatus } from "../lib/format";
+import type { UserProfile } from "../lib/types";
 
 export default function UserDashboard() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -22,14 +16,18 @@ export default function UserDashboard() {
 
   const subscriptionCount = profile?.subscriptions.length ?? 0;
   const activeKeyCount = profile?.api_keys.filter((item) => item.status === "active").length ?? 0;
+  const recentSubscription = profile?.subscriptions[0];
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-slate-800">使用概览</h2>
-        <button className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors shadow-sm">
-          创建 API 密钥
-        </button>
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">用户中心</h2>
+          <p className="mt-2 text-sm text-slate-500">从这里开始管理套餐、付款、订阅和 API 密钥。</p>
+        </div>
+        <Link className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors shadow-sm" to="/user/catalog">
+          去购买套餐
+        </Link>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -59,27 +57,30 @@ export default function UserDashboard() {
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 min-h-[300px]">
-          <h3 className="text-lg font-semibold text-slate-800 mb-4">我的订阅</h3>
-          <div className="space-y-3">
-            {profile?.subscriptions.map((item) => (
-              <div key={item.id} className="rounded-lg border border-slate-100 p-4">
-                <div className="font-medium text-slate-800">{item.package_id}</div>
-                <div className="text-sm text-slate-500">状态：{item.status === "active" ? "生效中" : item.status}</div>
-                <div className="text-sm text-slate-500">到期时间：{new Date(item.expires_at).toLocaleString("zh-CN")}</div>
-              </div>
-            )) ?? <p className="text-slate-400">暂无订阅。</p>}
-          </div>
+          <h3 className="text-lg font-semibold text-slate-800 mb-4">最近订阅</h3>
+          {recentSubscription ? (
+            <div className="rounded-lg border border-slate-100 p-4">
+              <div className="font-medium text-slate-800">{recentSubscription.package_id}</div>
+              <div className="mt-2 text-sm text-slate-500">状态：{mapSubscriptionStatus(recentSubscription.status)}</div>
+              <div className="text-sm text-slate-500">到期时间：{formatDate(recentSubscription.expires_at)}</div>
+              <Link className="mt-4 inline-flex text-sm font-medium text-blue-600 hover:text-blue-800" to="/user/subscriptions">
+                查看全部订阅
+              </Link>
+            </div>
+          ) : <p className="text-slate-400">暂无订阅。</p>}
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 min-h-[300px]">
-          <h3 className="text-lg font-semibold text-slate-800 mb-4">API 密钥</h3>
-          <div className="space-y-3">
-            {profile?.api_keys.map((item) => (
-              <div key={item.id} className="rounded-lg border border-slate-100 p-4">
-                <div className="font-medium text-slate-800">{item.id}</div>
-                <div className="text-sm text-slate-500">状态：{item.status === "active" ? "可用" : item.status}</div>
-                <div className="text-sm text-slate-500">最近使用：{item.last_used_at ? new Date(item.last_used_at).toLocaleString("zh-CN") : "暂无记录"}</div>
-              </div>
-            )) ?? <p className="text-slate-400">暂无 API 密钥。</p>}
+          <h3 className="text-lg font-semibold text-slate-800 mb-4">常用操作</h3>
+          <div className="grid gap-3">
+            <Link className="rounded-lg border border-slate-200 px-4 py-4 text-sm text-slate-700 transition hover:border-blue-300 hover:bg-blue-50" to="/user/orders">
+              查看订单与付款状态
+            </Link>
+            <Link className="rounded-lg border border-slate-200 px-4 py-4 text-sm text-slate-700 transition hover:border-blue-300 hover:bg-blue-50" to="/user/keys">
+              管理 API 密钥
+            </Link>
+            <Link className="rounded-lg border border-slate-200 px-4 py-4 text-sm text-slate-700 transition hover:border-blue-300 hover:bg-blue-50" to="/user/usage">
+              查看最近用量记录
+            </Link>
           </div>
         </div>
       </div>

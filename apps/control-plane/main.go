@@ -539,17 +539,30 @@ func main() {
 		writeJSON(w, http.StatusOK, safeUser(user))
 	}))
 
-	mux.HandleFunc("/api/user/catalog", requireRole(svc, "", func(w http.ResponseWriter, r *http.Request, _ domain.User) {
+	mux.HandleFunc("/api/user/catalog", requireRole(svc, "", func(w http.ResponseWriter, r *http.Request, user domain.User) {
 		if r.Method != http.MethodGet {
 			http.NotFound(w, r)
 			return
 		}
-		packages, err := svc.UserPackages()
+		packages, err := svc.UserPackages(user.ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"packages": packages})
+	}))
+
+	mux.HandleFunc("/api/user/subscriptions", requireRole(svc, "", func(w http.ResponseWriter, r *http.Request, user domain.User) {
+		if r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		subscriptions, err := svc.UserSubscriptions(user.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, subscriptions)
 	}))
 
 	mux.HandleFunc("/api/user/profile", requireRole(svc, "", func(w http.ResponseWriter, r *http.Request, user domain.User) {
@@ -650,6 +663,38 @@ func main() {
 		default:
 			http.NotFound(w, r)
 		}
+	}))
+
+	mux.HandleFunc("/api/user/orders/", requireRole(svc, "", func(w http.ResponseWriter, r *http.Request, user domain.User) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/user/orders/")
+		if path == "" {
+			http.NotFound(w, r)
+			return
+		}
+		if strings.HasSuffix(path, "/confirm-payment") {
+			if r.Method != http.MethodPost {
+				http.NotFound(w, r)
+				return
+			}
+			orderID := strings.TrimSuffix(path, "/confirm-payment")
+			checkout, err := svc.ConfirmUserOrderPayment(user.ID, orderID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, checkout)
+			return
+		}
+		if r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		detail, err := svc.UserOrderDetail(user.ID, path)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, detail)
 	}))
 
 	mux.HandleFunc("/api/user/payments", requireRole(svc, "", func(w http.ResponseWriter, r *http.Request, user domain.User) {
