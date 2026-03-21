@@ -11,7 +11,20 @@ COPY . .
 RUN cargo build --release --locked --bin antigravity_tools
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y curl libssl3 ca-certificates sqlite3 libsqlite3-0 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    libssl3 \
+    sqlite3 \
+    libsqlite3-0 \
+    libgtk-3-0 \
+    libsoup-3.0-0 \
+    libjavascriptcoregtk-4.1-0 \
+    libwebkit2gtk-4.1-0 \
+    libayatana-appindicator3-1 \
+    librsvg2-2 \
+    xdg-utils \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/target/release/antigravity_tools .
 EXPOSE 8045
