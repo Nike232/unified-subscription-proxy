@@ -25,7 +25,7 @@ func main() {
 	databaseURL := getenv("DATABASE_URL", "")
 	runtimeConfig := loadProxyRuntimeConfig()
 
-	st, err := store.NewConfiguredStore(context.Background(), storeBackend, dataPath, databaseURL)
+	st, err := openConfiguredStoreWithRetry(context.Background(), storeBackend, dataPath, databaseURL)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -772,6 +772,28 @@ func main() {
 	if err := http.ListenAndServe(addr, loggingMiddleware(mux)); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func openConfiguredStoreWithRetry(ctx context.Context, backend, dataPath, databaseURL string) (store.Store, error) {
+	if backend != "postgres" {
+		return store.NewConfiguredStore(ctx, backend, dataPath, databaseURL)
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= 30; attempt++ {
+		st, err := store.NewConfiguredStore(ctx, backend, dataPath, databaseURL)
+		if err == nil {
+			if attempt > 1 {
+				log.Printf("postgres store connected after %d attempts", attempt)
+			}
+			return st, nil
+		}
+		lastErr = err
+		log.Printf("postgres store init attempt %d/30 failed: %v", attempt, err)
+		time.Sleep(2 * time.Second)
+	}
+
+	return nil, lastErr
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

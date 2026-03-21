@@ -31,7 +31,8 @@ services:
       ANTIGRAVITY_TENANT_ID: ${ANTIGRAVITY_TENANT_ID:-}
       ANTIGRAVITY_BASE_URL: ${ANTIGRAVITY_BASE_URL:-https://api.antigravity.example}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null"]
       interval: 15s
@@ -49,7 +50,8 @@ services:
       CONTROL_PLANE_ORIGIN: http://control-plane:8080
       PROXY_CORE_ADDR: ":8081"
     depends_on:
-      - control-plane
+      control-plane:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/healthz >/dev/null"]
       interval: 15s
@@ -67,7 +69,8 @@ services:
       CONTROL_PLANE_ORIGIN: http://control-plane:8080
     command: ["--headless"]
     depends_on:
-      - control-plane
+      control-plane:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8045/healthz >/dev/null"]
       interval: 20s
@@ -84,7 +87,8 @@ services:
     environment:
       CONTROL_PLANE_UPSTREAM: ${WEB_CONTROL_PLANE_UPSTREAM:-http://control-plane:8080}
     depends_on:
-      - control-plane
+      control-plane:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null"]
       interval: 20s
