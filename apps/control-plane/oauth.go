@@ -175,6 +175,21 @@ func oauthConfigs(svc *service.Service) map[string]service.OAuthProviderConfig {
 		}
 		configs[provider] = cfg
 	}
+	// Legacy config guard:
+	// keep builtin OAuth clients on their expected redirect URIs even if older
+	// web-saved settings accidentally persisted a public callback URL.
+	if cfg, ok := configs[domain.ProviderOpenAI]; ok {
+		if strings.TrimSpace(cfg.ClientID) == "app_EMoamEEZ73f0CkXaXp7hrann" {
+			cfg.RedirectURL = openAIBuiltinRedirectURL
+			configs[domain.ProviderOpenAI] = cfg
+		}
+	}
+	if cfg, ok := configs[domain.ProviderGemini]; ok {
+		if strings.TrimSpace(cfg.ClientID) == geminiCLIBuiltinClientID {
+			cfg.RedirectURL = geminiCLIBuiltinRedirectURL
+			configs[domain.ProviderGemini] = cfg
+		}
+	}
 	return configs
 }
 
