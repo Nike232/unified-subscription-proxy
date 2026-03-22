@@ -38,6 +38,31 @@ type automationConfig struct {
 
 func oauthConfigs() map[string]service.OAuthProviderConfig {
 	return map[string]service.OAuthProviderConfig{
+		domain.ProviderOpenAI: {
+			Provider:             domain.ProviderOpenAI,
+			ClientID:             getenv("OPENAI_OAUTH_CLIENT_ID", "app_EMoamEEZ73f0CkXaXp7hrann"),
+			ClientSecret:         os.Getenv("OPENAI_OAUTH_CLIENT_SECRET"),
+			AuthorizeURL:         getenv("OPENAI_OAUTH_AUTHORIZE_URL", "https://auth.openai.com/oauth/authorize"),
+			TokenURL:             getenv("OPENAI_OAUTH_TOKEN_URL", "https://auth.openai.com/oauth/token"),
+			RedirectURL:          getenv("OPENAI_OAUTH_REDIRECT_URL", "http://127.0.0.1:8080/api/admin/oauth/callback/openai"),
+			Scopes:               defaultScopes(splitCSV(os.Getenv("OPENAI_OAUTH_SCOPES")), []string{"openid", "profile", "email", "offline_access"}),
+			RefreshScopes:        defaultScopes(splitCSV(os.Getenv("OPENAI_OAUTH_REFRESH_SCOPES")), []string{"openid", "profile", "email"}),
+			UsePKCE:              true,
+			ExtraAuthorizeParams: map[string]string{"id_token_add_organizations": "true", "codex_cli_simplified_flow": "true"},
+		},
+		domain.ProviderGemini: {
+			Provider:              domain.ProviderGemini,
+			ClientID:              os.Getenv("GEMINI_OAUTH_CLIENT_ID"),
+			ClientSecret:          os.Getenv("GEMINI_OAUTH_CLIENT_SECRET"),
+			AuthorizeURL:          getenv("GEMINI_OAUTH_AUTHORIZE_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
+			TokenURL:              getenv("GEMINI_OAUTH_TOKEN_URL", "https://oauth2.googleapis.com/token"),
+			RedirectURL:           getenv("GEMINI_OAUTH_REDIRECT_URL", "http://127.0.0.1:8080/api/admin/oauth/callback/gemini"),
+			Scopes:                defaultScopes(splitCSV(os.Getenv("GEMINI_OAUTH_SCOPES")), []string{"https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"}),
+			UsePKCE:               true,
+			AccessType:            "offline",
+			Prompt:                getenv("GEMINI_OAUTH_PROMPT", "consent"),
+			IncludeGrantedScopes:  true,
+		},
 		domain.ProviderClaude: {
 			Provider:     domain.ProviderClaude,
 			ClientID:     os.Getenv("CLAUDE_OAUTH_CLIENT_ID"),
@@ -89,6 +114,13 @@ func splitCSV(value string) []string {
 		}
 	}
 	return out
+}
+
+func defaultScopes(current []string, fallback []string) []string {
+	if len(current) > 0 {
+		return current
+	}
+	return append([]string(nil), fallback...)
 }
 
 func refreshExpiringAccounts(ctx context.Context, svc *service.Service, client *http.Client, configs map[string]service.OAuthProviderConfig) error {
@@ -190,20 +222,31 @@ func refreshAccount(ctx context.Context, svc *service.Service, client *http.Clie
 	return svc.RefreshAccountTokens(account.ID, payload)
 }
 
-func exchangeAuthorizationCode(ctx context.Context, client *http.Client, cfg service.OAuthProviderConfig, code string) (service.TokenPayload, error) {
-	return exchangeOAuthToken(ctx, client, cfg, url.Values{
+func exchangeAuthorizationCode(ctx context.Context, client *http.Client, cfg service.OAuthProviderConfig, session domain.OAuthSession, code string) (service.TokenPayload, error) {
+	values := url.Values{
 		"grant_type":   []string{"authorization_code"},
 		"code":         []string{code},
 		"redirect_uri": []string{cfg.RedirectURL},
-	})
+	}
+	if cfg.UsePKCE && strings.TrimSpace(session.CodeVerifier) != "" {
+		values.Set("code_verifier", session.CodeVerifier)
+	}
+	return exchangeOAuthToken(ctx, client, cfg, values)
 }
 
 func exchangeOAuthToken(ctx context.Context, client *http.Client, cfg service.OAuthProviderConfig, values url.Values) (service.TokenPayload, error) {
 	if strings.TrimSpace(cfg.TokenURL) == "" {
 		return service.TokenPayload{}, errors.New("oauth token url not configured")
 	}
-	values.Set("client_id", cfg.ClientID)
-	values.Set("client_secret", cfg.ClientSecret)
+	if strings.TrimSpace(cfg.ClientID) != "" {
+		values.Set("client_id", cfg.ClientID)
+	}
+	if strings.TrimSpace(cfg.ClientSecret) != "" {
+		values.Set("client_secret", cfg.ClientSecret)
+	}
+	if values.Get("grant_type") == "refresh_token" && len(cfg.RefreshScopes) > 0 {
+		values.Set("scope", strings.Join(cfg.RefreshScopes, " "))
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.TokenURL, strings.NewReader(values.Encode()))
 	if err != nil {
 		return service.TokenPayload{}, err

@@ -18,7 +18,7 @@ func TestBuildOAuthAuthorizeURL(t *testing.T) {
 		AuthorizeURL: "https://example.com/oauth/authorize",
 		RedirectURL:  "http://127.0.0.1/callback",
 		Scopes:       []string{"read", "write"},
-	}, "state-123")
+	}, domain.OAuthSession{State: "state-123"})
 	if err != nil {
 		t.Fatalf("BuildOAuthAuthorizeURL returned error: %v", err)
 	}
@@ -34,6 +34,41 @@ func TestBuildOAuthAuthorizeURL(t *testing.T) {
 	}
 }
 
+func TestBuildOAuthAuthorizeURLWithPKCE(t *testing.T) {
+	u, err := BuildOAuthAuthorizeURL(OAuthProviderConfig{
+		Provider:              domain.ProviderGemini,
+		ClientID:              "client-id",
+		AuthorizeURL:          "https://example.com/oauth/authorize",
+		RedirectURL:           "http://127.0.0.1/callback",
+		Scopes:                []string{"scope-a"},
+		UsePKCE:               true,
+		AccessType:            "offline",
+		Prompt:                "consent",
+		IncludeGrantedScopes:  true,
+		ExtraAuthorizeParams:  map[string]string{"foo": "bar"},
+	}, domain.OAuthSession{State: "state-456", CodeVerifier: "verifier-123"})
+	if err != nil {
+		t.Fatalf("BuildOAuthAuthorizeURL returned error: %v", err)
+	}
+	parsed, err := url.Parse(u)
+	if err != nil {
+		t.Fatalf("failed parsing url: %v", err)
+	}
+	q := parsed.Query()
+	if q.Get("state") != "state-456" {
+		t.Fatalf("unexpected state: %s", q.Get("state"))
+	}
+	if q.Get("code_challenge") == "" || q.Get("code_challenge_method") != "S256" {
+		t.Fatalf("expected PKCE params, got %s", parsed.RawQuery)
+	}
+	if q.Get("access_type") != "offline" || q.Get("prompt") != "consent" {
+		t.Fatalf("expected offline prompt params, got %s", parsed.RawQuery)
+	}
+	if q.Get("include_granted_scopes") != "true" || q.Get("foo") != "bar" {
+		t.Fatalf("expected extra params, got %s", parsed.RawQuery)
+	}
+}
+
 func TestCreateAndCompleteOAuthSession(t *testing.T) {
 	dir := t.TempDir()
 	svc := New(store.NewFileStore(filepath.Join(dir, "platform.json")))
@@ -43,6 +78,9 @@ func TestCreateAndCompleteOAuthSession(t *testing.T) {
 	}
 	if providerName != domain.ProviderClaude {
 		t.Fatalf("unexpected provider name: %s", providerName)
+	}
+	if strings.TrimSpace(session.CodeVerifier) == "" {
+		t.Fatalf("expected code verifier to be generated")
 	}
 	account, completed, err := svc.CompleteOAuthSession(session.State, TokenPayload{
 		AccessToken:  "access",

@@ -174,6 +174,7 @@ type OAuthSession struct {
 	State      string    `json:"state"`
 	AccountID  string    `json:"account_id"`
 	Provider   string    `json:"provider"`
+	CodeVerifier string  `json:"code_verifier,omitempty"`
 	RedirectTo string    `json:"redirect_to,omitempty"`
 	Status     string    `json:"status"`
 	CreatedAt  time.Time `json:"created_at"`

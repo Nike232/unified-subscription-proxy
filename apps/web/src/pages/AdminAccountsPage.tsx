@@ -5,6 +5,7 @@ import type { AdminUpstreamAccountItem } from "../lib/types";
 
 const providerOptions = ["openai", "gemini", "claude", "codex", "antigravity"] as const;
 const statusOptions = ["active", "invalid", "disabled"] as const;
+const oauthProviders = new Set(["openai", "gemini", "claude", "codex", "antigravity"]);
 
 const emptyEditor = {
   provider: "openai",
@@ -164,6 +165,26 @@ export default function AdminAccountsPage() {
     }
   };
 
+  const startOAuth = async (account: AdminUpstreamAccountItem) => {
+    setBusyAction(`${account.id}:oauth`);
+    setError("");
+    setMessage("");
+    try {
+      const payload = await apiFetch<{ authorize_url: string }>(`/api/admin/upstream-accounts/${account.id}/oauth/start`, {
+        method: "POST",
+        body: JSON.stringify({ redirect_to: window.location.href }),
+      });
+      if (!payload.authorize_url) {
+        throw new Error("未获取到 OAuth 授权地址。");
+      }
+      window.location.href = payload.authorize_url;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "发起 OAuth 登录失败。");
+    } finally {
+      setBusyAction("");
+    }
+  };
+
   const saveAccount = async () => {
     setSaving(true);
     setError("");
@@ -312,6 +333,11 @@ export default function AdminAccountsPage() {
                       </div>
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-2" onClick={(e) => e.stopPropagation()}>
+                      {oauthProviders.has(account.provider) ? (
+                        <button className="rounded-xl border border-blue-200 px-4 py-2 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50" disabled={busyAction === `${account.id}:oauth`} onClick={() => void startOAuth(account)}>
+                          {busyAction === `${account.id}:oauth` ? "跳转中..." : "OAuth 登录"}
+                        </button>
+                      ) : null}
                       <button className="rounded-xl border border-slate-200 px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50" disabled={actionState("test")} onClick={() => void runAction(account.id, "test")}>
                         {actionState("test") ? "检查中..." : "健康检查"}
                       </button>
@@ -368,7 +394,7 @@ export default function AdminAccountsPage() {
                 </label>
                 <label className="block">
                   <span className="mb-2 block text-sm font-medium text-slate-600">鉴权方式</span>
-                  <input className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" value={editor.auth_mode} onChange={(e) => setEditor((prev) => ({ ...prev, auth_mode: e.target.value }))} placeholder="api_key / oauth / bearer" />
+                  <input className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" value={editor.auth_mode} onChange={(e) => setEditor((prev) => ({ ...prev, auth_mode: e.target.value }))} placeholder="oauth / api_key / bearer" />
                 </label>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
@@ -401,6 +427,12 @@ export default function AdminAccountsPage() {
                 <span className="mb-2 block text-sm font-medium text-slate-600">Base URL</span>
                 <input className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" value={editor.base_url} onChange={(e) => setEditor((prev) => ({ ...prev, base_url: e.target.value }))} />
               </label>
+
+              {(editor.provider === "openai" || editor.provider === "gemini") ? (
+                <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-700">
+                  当前推荐以 OAuth 登录接入该 provider。若尚未完成授权，可临时填写 token 或兼容 API key 作为兜底。
+                </div>
+              ) : null}
 
               {(["api_key", "access_token", "refresh_token"] as const).map((key) => (
                 <label key={key} className="block">

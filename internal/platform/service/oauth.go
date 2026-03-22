@@ -1,6 +1,10 @@
 package service
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -19,6 +23,12 @@ type OAuthProviderConfig struct {
 	TokenURL     string
 	RedirectURL  string
 	Scopes       []string
+	RefreshScopes []string
+	UsePKCE      bool
+	AccessType   string
+	Prompt       string
+	IncludeGrantedScopes bool
+	ExtraAuthorizeParams map[string]string
 }
 
 type TokenPayload struct {
@@ -49,6 +59,7 @@ func (s *Service) CreateOAuthSession(accountID, redirectTo string) (domain.OAuth
 		State:      randomID(16),
 		AccountID:  account.ID,
 		Provider:   account.Provider,
+		CodeVerifier: mustGenerateCodeVerifier(),
 		RedirectTo: strings.TrimSpace(redirectTo),
 		Status:     "pending",
 		CreatedAt:  time.Now().UTC(),
@@ -61,7 +72,7 @@ func (s *Service) CreateOAuthSession(accountID, redirectTo string) (domain.OAuth
 	return session, account.Provider, err
 }
 
-func BuildOAuthAuthorizeURL(cfg OAuthProviderConfig, state string) (string, error) {
+func BuildOAuthAuthorizeURL(cfg OAuthProviderConfig, session domain.OAuthSession) (string, error) {
 	if strings.TrimSpace(cfg.AuthorizeURL) == "" || strings.TrimSpace(cfg.ClientID) == "" || strings.TrimSpace(cfg.RedirectURL) == "" {
 		return "", errors.New("oauth provider authorize config incomplete")
 	}
@@ -73,12 +84,43 @@ func BuildOAuthAuthorizeURL(cfg OAuthProviderConfig, state string) (string, erro
 	query.Set("response_type", "code")
 	query.Set("client_id", cfg.ClientID)
 	query.Set("redirect_uri", cfg.RedirectURL)
-	query.Set("state", state)
+	query.Set("state", session.State)
 	if len(cfg.Scopes) > 0 {
 		query.Set("scope", strings.Join(cfg.Scopes, " "))
 	}
+	if cfg.UsePKCE {
+		query.Set("code_challenge", generateCodeChallenge(session.CodeVerifier))
+		query.Set("code_challenge_method", "S256")
+	}
+	if cfg.AccessType != "" {
+		query.Set("access_type", cfg.AccessType)
+	}
+	if cfg.Prompt != "" {
+		query.Set("prompt", cfg.Prompt)
+	}
+	if cfg.IncludeGrantedScopes {
+		query.Set("include_granted_scopes", "true")
+	}
+	for key, value := range cfg.ExtraAuthorizeParams {
+		if strings.TrimSpace(key) != "" && strings.TrimSpace(value) != "" {
+			query.Set(key, value)
+		}
+	}
 	u.RawQuery = query.Encode()
 	return u.String(), nil
+}
+
+func (s *Service) OAuthSessionByState(state string) (domain.OAuthSession, error) {
+	data, err := s.store.Load()
+	if err != nil {
+		return domain.OAuthSession{}, err
+	}
+	for _, session := range data.OAuthSessions {
+		if session.State == state {
+			return session, nil
+		}
+	}
+	return domain.OAuthSession{}, errors.New("oauth session not found")
 }
 
 func (s *Service) CompleteOAuthSession(state string, token TokenPayload) (domain.UpstreamAccount, domain.OAuthSession, error) {
@@ -383,7 +425,7 @@ func RefreshableProvider(provider string) bool {
 
 func supportsOAuthProvider(provider string) bool {
 	switch provider {
-	case domain.ProviderClaude, domain.ProviderCodex, domain.ProviderAntigravity:
+	case domain.ProviderClaude, domain.ProviderCodex, domain.ProviderAntigravity, domain.ProviderOpenAI, domain.ProviderGemini:
 		return true
 	default:
 		return false
@@ -470,4 +512,25 @@ func ensureAccountMeta(account *domain.UpstreamAccount) {
 	if account.Meta == nil {
 		account.Meta = map[string]string{}
 	}
+}
+
+func mustGenerateCodeVerifier() string {
+	verifier, err := generateCodeVerifier()
+	if err != nil {
+		return randomID(32) + randomID(32)
+	}
+	return verifier
+}
+
+func generateCodeVerifier() (string, error) {
+	bytes := make([]byte, 64)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+func generateCodeChallenge(verifier string) string {
+	hash := sha256.Sum256([]byte(verifier))
+	return strings.TrimRight(base64.URLEncoding.EncodeToString(hash[:]), "=")
 }

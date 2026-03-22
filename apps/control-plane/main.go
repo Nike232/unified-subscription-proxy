@@ -231,7 +231,7 @@ func main() {
 				writeError(w, http.StatusBadRequest, err)
 				return
 			}
-			authURL, err := service.BuildOAuthAuthorizeURL(cfg, session.State)
+			authURL, err := service.BuildOAuthAuthorizeURL(cfg, session)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err)
 				return
@@ -567,18 +567,23 @@ func main() {
 			writeError(w, http.StatusBadRequest, errString("missing oauth callback code or state"))
 			return
 		}
-		tokenPayload, err := exchangeAuthorizationCode(r.Context(), oauthHTTPClient, cfg, code)
+		session, err := svc.OAuthSessionByState(state)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		tokenPayload, err := exchangeAuthorizationCode(r.Context(), oauthHTTPClient, cfg, session, code)
 		if err != nil {
 			_ = svc.MarkOAuthSessionFailed(state, err.Error())
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		account, session, err := svc.CompleteOAuthSession(state, tokenPayload)
+		account, completedSession, err := svc.CompleteOAuthSession(state, tokenPayload)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		writeHTML(w, http.StatusOK, renderOAuthCallbackPage(account, session.RedirectTo))
+		writeHTML(w, http.StatusOK, renderOAuthCallbackPage(account, completedSession.RedirectTo))
 	})
 
 	mux.HandleFunc("/api/user/me", requireRole(svc, "", func(w http.ResponseWriter, r *http.Request, user domain.User) {

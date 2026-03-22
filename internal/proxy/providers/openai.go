@@ -27,9 +27,9 @@ func (p *OpenAIProvider) Name() string {
 }
 
 func (p *OpenAIProvider) Execute(ctx context.Context, req Request) (Response, error) {
-	apiKey := strings.TrimSpace(req.Account.Meta["api_key"])
-	if apiKey == "" {
-		return Response{}, fmt.Errorf("openai provider missing api_key for account %s", req.Account.ID)
+	token := strings.TrimSpace(firstNonEmpty(req.Account.Meta["access_token"], req.Account.Meta["api_key"]))
+	if token == "" {
+		return Response{}, fmt.Errorf("openai provider missing oauth token or api_key for account %s", req.Account.ID)
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(req.Account.Meta["base_url"]), "/")
 	if baseURL == "" {
@@ -44,7 +44,7 @@ func (p *OpenAIProvider) Execute(ctx context.Context, req Request) (Response, er
 	if err != nil {
 		return Response{}, err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	httpReq.Header.Set("Authorization", "Bearer "+token)
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := p.client.Do(httpReq)
@@ -77,9 +77,9 @@ func (p *OpenAIProvider) Execute(ctx context.Context, req Request) (Response, er
 }
 
 func (p *OpenAIProvider) HealthCheck(ctx context.Context, account domain.UpstreamAccount) (HealthResult, error) {
-	apiKey := strings.TrimSpace(account.Meta["api_key"])
-	if apiKey == "" {
-		return HealthResult{}, fmt.Errorf("openai provider missing api_key for account %s", account.ID)
+	token := strings.TrimSpace(firstNonEmpty(account.Meta["access_token"], account.Meta["api_key"]))
+	if token == "" {
+		return HealthResult{}, fmt.Errorf("openai provider missing oauth token or api_key for account %s", account.ID)
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(account.Meta["base_url"]), "/")
 	if baseURL == "" {
@@ -89,7 +89,7 @@ func (p *OpenAIProvider) HealthCheck(ctx context.Context, account domain.Upstrea
 	if err != nil {
 		return HealthResult{}, err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	httpReq.Header.Set("Authorization", "Bearer "+token)
 	resp, err := p.client.Do(httpReq)
 	if err != nil {
 		return HealthResult{}, err

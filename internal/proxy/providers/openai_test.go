@@ -41,3 +41,33 @@ func TestOpenAIProviderForwardsRequest(t *testing.T) {
 		t.Fatalf("unexpected status: %d", resp.StatusCode)
 	}
 }
+
+func TestOpenAIProviderPrefersAccessToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer oauth-openai-token" {
+			t.Fatalf("unexpected auth header: %s", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "cmpl", "object": "chat.completion"})
+	}))
+	defer server.Close()
+
+	provider := NewOpenAIProvider(server.Client())
+	resp, err := provider.Execute(context.Background(), Request{
+		Account: domain.UpstreamAccount{
+			ID:       "acct-openai-1",
+			Provider: domain.ProviderOpenAI,
+			Meta: map[string]string{
+				"api_key":      "legacy-openai-key",
+				"access_token": "oauth-openai-token",
+				"base_url":     server.URL,
+			},
+		},
+		Body: []byte(`{"model":"gpt-fast","messages":[{"role":"user","content":"hello"}]}`),
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected status: %d", resp.StatusCode)
+	}
+}

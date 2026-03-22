@@ -28,9 +28,10 @@ func (p *GeminiProvider) Name() string {
 }
 
 func (p *GeminiProvider) Execute(ctx context.Context, req Request) (Response, error) {
+	accessToken := strings.TrimSpace(req.Account.Meta["access_token"])
 	apiKey := strings.TrimSpace(req.Account.Meta["api_key"])
-	if apiKey == "" {
-		return Response{}, fmt.Errorf("gemini provider missing api_key for account %s", req.Account.ID)
+	if accessToken == "" && apiKey == "" {
+		return Response{}, fmt.Errorf("gemini provider missing oauth token or api_key for account %s", req.Account.ID)
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(req.Account.Meta["base_url"]), "/")
 	if baseURL == "" {
@@ -41,12 +42,18 @@ func (p *GeminiProvider) Execute(ctx context.Context, req Request) (Response, er
 	if err != nil {
 		return Response{}, err
 	}
-	url := fmt.Sprintf("%s/v1beta/models/%s:generateContent?key=%s", baseURL, req.UpstreamModel, apiKey)
+	url := fmt.Sprintf("%s/v1beta/models/%s:generateContent", baseURL, req.UpstreamModel)
+	if accessToken == "" {
+		url = fmt.Sprintf("%s?key=%s", url, apiKey)
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(geminiBody))
 	if err != nil {
 		return Response{}, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	if accessToken != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+accessToken)
+	}
 
 	resp, err := p.client.Do(httpReq)
 	if err != nil {
@@ -79,18 +86,25 @@ func (p *GeminiProvider) Execute(ctx context.Context, req Request) (Response, er
 }
 
 func (p *GeminiProvider) HealthCheck(ctx context.Context, account domain.UpstreamAccount) (HealthResult, error) {
+	accessToken := strings.TrimSpace(account.Meta["access_token"])
 	apiKey := strings.TrimSpace(account.Meta["api_key"])
-	if apiKey == "" {
-		return HealthResult{}, fmt.Errorf("gemini provider missing api_key for account %s", account.ID)
+	if accessToken == "" && apiKey == "" {
+		return HealthResult{}, fmt.Errorf("gemini provider missing oauth token or api_key for account %s", account.ID)
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(account.Meta["base_url"]), "/")
 	if baseURL == "" {
 		baseURL = "https://generativelanguage.googleapis.com"
 	}
-	url := fmt.Sprintf("%s/v1beta/models?key=%s", baseURL, apiKey)
+	url := fmt.Sprintf("%s/v1beta/models", baseURL)
+	if accessToken == "" {
+		url = fmt.Sprintf("%s?key=%s", url, apiKey)
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return HealthResult{}, err
+	}
+	if accessToken != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+accessToken)
 	}
 	resp, err := p.client.Do(httpReq)
 	if err != nil {
