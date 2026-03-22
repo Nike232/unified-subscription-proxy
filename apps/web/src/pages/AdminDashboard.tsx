@@ -49,6 +49,8 @@ export default function AdminDashboard() {
       });
   }, []);
 
+  const safeUsers = Array.isArray(users) ? users : [];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -57,7 +59,7 @@ export default function AdminDashboard() {
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center min-h-[140px]">
-          <div className="text-3xl font-bold text-slate-700">{users.length}</div>
+          <div className="text-3xl font-bold text-slate-700">{safeUsers.length}</div>
           <p className="text-sm text-slate-500 mt-2 font-medium">注册用户数</p>
         </div>
         <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col items-center justify-center min-h-[140px]">
@@ -118,10 +120,10 @@ export default function AdminDashboard() {
             <tbody className="text-sm text-slate-700">
               {loading ? (
                 <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-500">正在加载用户...</td></tr>
-              ) : users.length === 0 ? (
+              ) : safeUsers.length === 0 ? (
                 <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-500">暂无用户数据。</td></tr>
               ) : (
-                users.map(u => (
+                safeUsers.map(u => (
                   <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50/50">
                     <td className="px-6 py-3 font-mono text-xs">{u.id}</td>
                     <td className="px-6 py-3">{u.email}</td>

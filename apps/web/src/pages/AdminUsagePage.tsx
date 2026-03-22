@@ -22,13 +22,15 @@ export default function AdminUsagePage() {
       });
   }, []);
 
-  const filtered = useMemo(() => logs.filter((item) => {
+  const safeLogs = Array.isArray(logs) ? logs : [];
+
+  const filtered = useMemo(() => safeLogs.filter((item) => {
     if (statusFilter && item.status !== statusFilter) return false;
     if (providerFilter && item.provider !== providerFilter) return false;
     return true;
-  }), [logs, providerFilter, statusFilter]);
+  }), [safeLogs, providerFilter, statusFilter]);
 
-  const providers = Array.from(new Set(logs.map((item) => item.provider).filter(Boolean)));
+  const providers = Array.from(new Set(safeLogs.map((item) => item.provider).filter(Boolean)));
 
   return (
     <div className="space-y-6">

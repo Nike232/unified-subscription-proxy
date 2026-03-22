@@ -23,9 +23,11 @@ export default function UserKeysPage() {
     load().catch((err: Error) => setError(err.message));
   }, []);
 
+  const safeKeys = Array.isArray(keys) ? keys : [];
+  const safeSubscriptions = Array.isArray(subscriptions) ? subscriptions : [];
   const activeSubscriptions = useMemo(
-    () => subscriptions.filter((item) => item.status === "active"),
-    [subscriptions],
+    () => safeSubscriptions.filter((item) => item.status === "active"),
+    [safeSubscriptions],
   );
 
   useEffect(() => {
@@ -104,9 +106,9 @@ export default function UserKeysPage() {
       </section>
 
       <div className="grid gap-4">
-        {keys.length === 0 ? (
+        {safeKeys.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-400 shadow-sm">暂无 API 密钥。</div>
-        ) : keys.map((item) => (
+        ) : safeKeys.map((item) => (
           <article key={item.id} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>

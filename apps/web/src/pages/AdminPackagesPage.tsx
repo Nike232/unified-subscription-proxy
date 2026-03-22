@@ -20,6 +20,8 @@ export default function AdminPackagesPage() {
       });
   }, []);
 
+  const safePackages = Array.isArray(packages) ? packages : [];
+
   return (
     <div className="space-y-6">
       <div>
@@ -33,10 +35,10 @@ export default function AdminPackagesPage() {
         <div className="mt-4 grid gap-4 lg:grid-cols-3">
           {loading ? (
             <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-6 text-sm text-slate-500">正在加载套餐数据...</div>
-          ) : packages.length === 0 ? (
+          ) : safePackages.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">当前还没有可展示的套餐。</div>
           ) : (
-            packages.map((pkg) => (
+            safePackages.map((pkg) => (
               <article key={pkg.id} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
                 <div className="flex items-center justify-between gap-4">
                   <div>

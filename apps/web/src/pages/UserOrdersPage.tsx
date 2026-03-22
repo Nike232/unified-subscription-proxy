@@ -21,7 +21,9 @@ export default function UserOrdersPage() {
       .catch((err: Error) => setError(err.message));
   }, []);
 
-  const paymentByOrder = new Map(payments.map((item) => [item.order_id, item]));
+  const safeOrders = Array.isArray(orders) ? orders : [];
+  const safePayments = Array.isArray(payments) ? payments : [];
+  const paymentByOrder = new Map(safePayments.map((item) => [item.order_id, item]));
 
   return (
     <div className="space-y-6">
@@ -49,11 +51,11 @@ export default function UserOrdersPage() {
             </tr>
           </thead>
           <tbody className="text-sm text-slate-700">
-            {orders.length === 0 ? (
+            {safeOrders.length === 0 ? (
               <tr>
                 <td className="px-6 py-10 text-center text-slate-400" colSpan={7}>暂无订单，先去选一个套餐吧。</td>
               </tr>
-            ) : orders.map((order) => {
+            ) : safeOrders.map((order) => {
               const payment = paymentByOrder.get(order.id);
               return (
                 <tr key={order.id} className="border-t border-slate-100">

@@ -14,9 +14,11 @@ export default function UserDashboard() {
       .catch((err: Error) => setError(err.message));
   }, []);
 
-  const subscriptionCount = profile?.subscriptions.length ?? 0;
-  const activeKeyCount = profile?.api_keys.filter((item) => item.status === "active").length ?? 0;
-  const recentSubscription = profile?.subscriptions[0];
+  const subscriptions = Array.isArray(profile?.subscriptions) ? profile.subscriptions : [];
+  const apiKeys = Array.isArray(profile?.api_keys) ? profile.api_keys : [];
+  const subscriptionCount = subscriptions.length;
+  const activeKeyCount = apiKeys.filter((item) => item.status === "active").length;
+  const recentSubscription = subscriptions[0];
 
   return (
     <div className="space-y-6">

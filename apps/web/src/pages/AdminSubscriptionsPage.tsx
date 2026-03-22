@@ -20,6 +20,8 @@ export default function AdminSubscriptionsPage() {
       });
   }, []);
 
+  const safeSubscriptions = Array.isArray(subscriptions) ? subscriptions : [];
+
   return (
     <div className="space-y-6">
       <div>
@@ -46,10 +48,10 @@ export default function AdminSubscriptionsPage() {
             <tbody className="text-sm text-slate-700">
               {loading ? (
                 <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500">正在加载订阅...</td></tr>
-              ) : subscriptions.length === 0 ? (
+              ) : safeSubscriptions.length === 0 ? (
                 <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500">暂无订阅记录。</td></tr>
               ) : (
-                subscriptions.map((item) => (
+                safeSubscriptions.map((item) => (
                   <tr key={item.id} className="border-t border-slate-100">
                     <td className="px-6 py-4 font-mono text-xs">{item.id}</td>
                     <td className="px-6 py-4 font-mono text-xs">{item.user_id}</td>

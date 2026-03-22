@@ -13,6 +13,8 @@ export default function UserUsagePage() {
       .catch((err: Error) => setError(err.message));
   }, []);
 
+  const safeLogs = Array.isArray(logs) ? logs : [];
+
   return (
     <div className="space-y-6">
       <div>
@@ -33,11 +35,11 @@ export default function UserUsagePage() {
             </tr>
           </thead>
           <tbody className="text-sm text-slate-700">
-            {logs.length === 0 ? (
+            {safeLogs.length === 0 ? (
               <tr>
                 <td className="px-6 py-10 text-center text-slate-400" colSpan={6}>暂无调用记录。</td>
               </tr>
-            ) : logs.map((item) => (
+            ) : safeLogs.map((item) => (
               <tr key={item.id} className="border-t border-slate-100">
                 <td className="px-6 py-4">{formatDate(item.created_at)}</td>
                 <td className="px-6 py-4">{item.model_alias}</td>

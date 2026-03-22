@@ -20,6 +20,8 @@ export default function AdminKeysPage() {
       });
   }, []);
 
+  const safeKeys = Array.isArray(keys) ? keys : [];
+
   return (
     <div className="space-y-6">
       <div>
@@ -45,10 +47,10 @@ export default function AdminKeysPage() {
             <tbody className="text-sm text-slate-700">
               {loading ? (
                 <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">正在加载密钥...</td></tr>
-              ) : keys.length === 0 ? (
+              ) : safeKeys.length === 0 ? (
                 <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">暂无 API 密钥。</td></tr>
               ) : (
-                keys.map((item) => (
+                safeKeys.map((item) => (
                   <tr key={item.id} className="border-t border-slate-100">
                     <td className="px-6 py-4">
                       <div className="font-mono text-xs text-slate-500">{item.id}</div>

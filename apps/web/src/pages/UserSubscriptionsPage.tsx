@@ -13,6 +13,8 @@ export default function UserSubscriptionsPage() {
       .catch((err: Error) => setError(err.message));
   }, []);
 
+  const safeSubscriptions = Array.isArray(subscriptions) ? subscriptions : [];
+
   return (
     <div className="space-y-6">
       <div>
@@ -21,9 +23,9 @@ export default function UserSubscriptionsPage() {
       </div>
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
       <div className="grid gap-5 lg:grid-cols-2">
-        {subscriptions.length === 0 ? (
+        {safeSubscriptions.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-400 shadow-sm">暂无订阅记录。</div>
-        ) : subscriptions.map((item) => (
+        ) : safeSubscriptions.map((item) => (
           <article key={item.id} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between gap-4">
               <h3 className="text-lg font-semibold text-slate-800">{item.package_id}</h3>
