@@ -131,6 +131,8 @@ const emptyOAuthEditor = {
   include_granted_scopes: false,
 };
 
+const oauthProvidersWithBuiltinFlow = new Set(["openai", "gemini"]);
+
 function maskSecret(value: string) {
   if (!value) return "未设置";
   if (value.length <= 8) return "••••••••";
@@ -187,6 +189,9 @@ export default function AdminAccountsPage() {
   const [busyAction, setBusyAction] = useState("");
   const [oauthConfigs, setOAuthConfigs] = useState<Record<string, AdminOAuthProviderConfig>>({});
   const [oauthEditor, setOAuthEditor] = useState(emptyOAuthEditor);
+  const [showAdvancedOAuth, setShowAdvancedOAuth] = useState(false);
+  const [pendingOAuth, setPendingOAuth] = useState<{ accountId: string; provider: string; state: string; authorizeURL: string } | null>(null);
+  const [manualOAuthInput, setManualOAuthInput] = useState("");
   const [showSecrets, setShowSecrets] = useState({
     api_key: false,
     access_token: false,
@@ -261,6 +266,9 @@ export default function AdminAccountsPage() {
     setSelected(account);
     setEditor(buildEditor(account));
     setOAuthEditor(buildOAuthEditor(oauthConfigs[account.provider]));
+    setShowAdvancedOAuth(false);
+    setPendingOAuth(null);
+    setManualOAuthInput("");
     setError("");
     setMessage("");
   };
@@ -270,6 +278,9 @@ export default function AdminAccountsPage() {
     setSelected(null);
     setEditor({ ...emptyEditor, base_url: providerBaseURLDefaults.openai || "" });
     setOAuthEditor(buildOAuthEditor(oauthConfigs.openai));
+    setShowAdvancedOAuth(false);
+    setPendingOAuth(null);
+    setManualOAuthInput("");
     setShowSecrets({ api_key: false, access_token: false, refresh_token: false, oauth_client_secret: false });
     setError("");
     setMessage("");
@@ -298,16 +309,59 @@ export default function AdminAccountsPage() {
     setError("");
     setMessage("");
     try {
-      const payload = await apiFetch<{ authorize_url: string }>(`/api/admin/upstream-accounts/${account.id}/oauth/start`, {
+      const payload = await apiFetch<{ authorize_url: string; session?: { state?: string } }>(`/api/admin/upstream-accounts/${account.id}/oauth/start`, {
         method: "POST",
         body: JSON.stringify({ redirect_to: window.location.href }),
       });
       if (!payload.authorize_url) {
         throw new Error("未获取到 OAuth 授权地址。");
       }
-      window.location.href = payload.authorize_url;
+      setPendingOAuth({
+        accountId: account.id,
+        provider: account.provider,
+        state: payload.session?.state || "",
+        authorizeURL: payload.authorize_url,
+      });
+      setManualOAuthInput("");
+      window.open(payload.authorize_url, "_blank", "noopener,noreferrer");
+      setMessage(`${account.provider} OAuth 授权页已打开。若浏览器没有自动回跳，请把完整回调 URL 或授权码粘贴到下方完成登录。`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "发起 OAuth 登录失败。");
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  const completeOAuth = async () => {
+    if (!pendingOAuth) {
+      setError("请先点击一次 OAuth 登录。");
+      return;
+    }
+    setBusyAction(`${pendingOAuth.accountId}:oauth-complete`);
+    setError("");
+    setMessage("");
+    try {
+      const raw = manualOAuthInput.trim();
+      let callbackURL = "";
+      let code = raw;
+      if (raw.startsWith("http://") || raw.startsWith("https://")) {
+        callbackURL = raw;
+        code = "";
+      }
+      const updated = await apiFetch<AdminUpstreamAccountItem>(`/api/admin/upstream-accounts/${pendingOAuth.accountId}/oauth/complete`, {
+        method: "POST",
+        body: JSON.stringify({
+          state: pendingOAuth.state,
+          code,
+          callback_url: callbackURL,
+        }),
+      });
+      await load(updated.id);
+      setPendingOAuth(null);
+      setManualOAuthInput("");
+      setMessage(`${updated.provider} OAuth 登录已完成。`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "完成 OAuth 登录失败。");
     } finally {
       setBusyAction("");
     }
@@ -601,9 +655,41 @@ export default function AdminAccountsPage() {
                 <span className="mt-2 block text-xs text-slate-500">Base URL 是上游接口根地址。通常保持默认值即可，只有你在接自定义网关或第三方中转时才需要修改。</span>
               </label>
 
-              {(editor.provider === "openai" || editor.provider === "gemini") ? (
+              {oauthProvidersWithBuiltinFlow.has(editor.provider) ? (
                 <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-700">
-                  当前按其他仓库的做法，默认以 OAuth 登录为主。先保存 OAuth 配置，再点击上方的 OAuth 登录即可，无需先手动填 API key。
+                  当前按老项目的做法，默认以 OAuth 登录为主。OpenAI/Gemini 不应该先让你手动理解整套 OAuth 配置，先直接点上方的 OAuth 登录；如果没有自动完成，再把回调 URL 或授权码粘贴回来。
+                </div>
+              ) : null}
+
+              {pendingOAuth && pendingOAuth.accountId === activeAccount?.id ? (
+                <div className="space-y-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                  <div className="text-sm text-blue-900">
+                    <p>授权窗口已经打开。</p>
+                    <p className="mt-1">如果浏览器未自动完成，请粘贴完整回调 URL，或者只粘贴授权码。</p>
+                    {pendingOAuth.state ? <p className="mt-2 break-all font-mono text-xs">state: {pendingOAuth.state}</p> : null}
+                  </div>
+                  <textarea
+                    className="min-h-28 w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm"
+                    placeholder="粘贴完整回调 URL，或者只粘贴 code"
+                    value={manualOAuthInput}
+                    onChange={(e) => setManualOAuthInput(e.target.value)}
+                  />
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                      disabled={busyAction === `${pendingOAuth.accountId}:oauth-complete` || !manualOAuthInput.trim()}
+                      onClick={() => void completeOAuth()}
+                    >
+                      {busyAction === `${pendingOAuth.accountId}:oauth-complete` ? "提交中..." : "提交回调完成登录"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-700"
+                      onClick={() => window.open(pendingOAuth.authorizeURL, "_blank", "noopener,noreferrer")}
+                    >
+                      再次打开授权页
+                    </button>
+                  </div>
                 </div>
               ) : null}
 
@@ -611,13 +697,26 @@ export default function AdminAccountsPage() {
                 <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h4 className="text-sm font-semibold text-slate-800">OAuth 基础配置</h4>
-                      <p className="mt-1 text-xs text-slate-500">保存后即可直接点击上方的 OAuth 登录，走完整授权回调流程。</p>
+                      <h4 className="text-sm font-semibold text-slate-800">OAuth 配置</h4>
+                      <p className="mt-1 text-xs text-slate-500">默认使用系统内置配置。只有在自建 OAuth Client 或排障时，才需要展开高级配置。</p>
                     </div>
                     <span className={`rounded-full px-3 py-1 text-xs font-medium ${oauthEditor.client_id && oauthEditor.authorize_url && oauthEditor.token_url && oauthEditor.redirect_url ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
                       {oauthEditor.client_id && oauthEditor.authorize_url && oauthEditor.token_url && oauthEditor.redirect_url ? "已配置" : "待配置"}
                     </span>
                   </div>
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                    <div>当前 Redirect URL：<span className="font-mono text-xs break-all">{oauthEditor.redirect_url || "未配置"}</span></div>
+                    <div className="mt-1">OpenAI 默认直接回跳到本站；Gemini 默认更接近 Gemini CLI / Code Assist 方式，必要时可粘贴回调 URL 或授权码完成登录。</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-sm font-medium text-blue-600 hover:text-blue-700"
+                    onClick={() => setShowAdvancedOAuth((prev) => !prev)}
+                  >
+                    {showAdvancedOAuth ? "收起高级 OAuth 配置" : "展开高级 OAuth 配置"}
+                  </button>
+                  {showAdvancedOAuth ? (
+                    <>
                   <div className="grid gap-4 md:grid-cols-2">
                     <label className="block">
                       <span className="mb-2 block text-sm font-medium text-slate-600">Client ID</span>
@@ -682,8 +781,10 @@ export default function AdminAccountsPage() {
                     </label>
                   </div>
                   <button className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400" disabled={savingOAuth} onClick={() => void saveOAuthConfig()}>
-                    {savingOAuth ? "保存 OAuth 配置中..." : `保存 ${editor.provider} OAuth 配置`}
+                    {savingOAuth ? "保存 OAuth 配置中..." : `保存 ${editor.provider} 高级 OAuth 配置`}
                   </button>
+                    </>
+                  ) : null}
                 </div>
               ) : null}
 

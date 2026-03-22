@@ -36,7 +36,33 @@ type automationConfig struct {
 	Cooldown               time.Duration
 }
 
+const geminiCLIBuiltinClientID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+const geminiCLIBuiltinRedirectURL = "https://codeassist.google.com/authcode"
+
+func defaultOAuthCallbackURL(provider string) string {
+	base := strings.TrimSpace(os.Getenv("CONTROL_PLANE_PUBLIC_ORIGIN"))
+	if base == "" {
+		base = "http://127.0.0.1:8080"
+	}
+	return strings.TrimRight(base, "/") + "/api/admin/oauth/callback/" + provider
+}
+
 func oauthBaseConfigs() map[string]service.OAuthProviderConfig {
+	geminiClientID := strings.TrimSpace(os.Getenv("GEMINI_OAUTH_CLIENT_ID"))
+	geminiClientSecret := strings.TrimSpace(os.Getenv("GEMINI_OAUTH_CLIENT_SECRET"))
+	geminiRedirectURL := strings.TrimSpace(os.Getenv("GEMINI_OAUTH_REDIRECT_URL"))
+	if geminiClientID == "" {
+		geminiClientID = geminiCLIBuiltinClientID
+		if geminiClientSecret == "" {
+			geminiClientSecret = strings.TrimSpace(os.Getenv("GEMINI_CLI_OAUTH_CLIENT_SECRET"))
+		}
+		if geminiRedirectURL == "" {
+			geminiRedirectURL = geminiCLIBuiltinRedirectURL
+		}
+	}
+	if geminiRedirectURL == "" {
+		geminiRedirectURL = defaultOAuthCallbackURL(domain.ProviderGemini)
+	}
 	return map[string]service.OAuthProviderConfig{
 		domain.ProviderOpenAI: {
 			Provider:             domain.ProviderOpenAI,
@@ -44,7 +70,7 @@ func oauthBaseConfigs() map[string]service.OAuthProviderConfig {
 			ClientSecret:         os.Getenv("OPENAI_OAUTH_CLIENT_SECRET"),
 			AuthorizeURL:         getenv("OPENAI_OAUTH_AUTHORIZE_URL", "https://auth.openai.com/oauth/authorize"),
 			TokenURL:             getenv("OPENAI_OAUTH_TOKEN_URL", "https://auth.openai.com/oauth/token"),
-			RedirectURL:          getenv("OPENAI_OAUTH_REDIRECT_URL", "http://127.0.0.1:8080/api/admin/oauth/callback/openai"),
+			RedirectURL:          getenv("OPENAI_OAUTH_REDIRECT_URL", defaultOAuthCallbackURL(domain.ProviderOpenAI)),
 			Scopes:               defaultScopes(splitCSV(os.Getenv("OPENAI_OAUTH_SCOPES")), []string{"openid", "profile", "email", "offline_access"}),
 			RefreshScopes:        defaultScopes(splitCSV(os.Getenv("OPENAI_OAUTH_REFRESH_SCOPES")), []string{"openid", "profile", "email"}),
 			UsePKCE:              true,
@@ -52,11 +78,11 @@ func oauthBaseConfigs() map[string]service.OAuthProviderConfig {
 		},
 		domain.ProviderGemini: {
 			Provider:              domain.ProviderGemini,
-			ClientID:              os.Getenv("GEMINI_OAUTH_CLIENT_ID"),
-			ClientSecret:          os.Getenv("GEMINI_OAUTH_CLIENT_SECRET"),
+			ClientID:              geminiClientID,
+			ClientSecret:          geminiClientSecret,
 			AuthorizeURL:          getenv("GEMINI_OAUTH_AUTHORIZE_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
 			TokenURL:              getenv("GEMINI_OAUTH_TOKEN_URL", "https://oauth2.googleapis.com/token"),
-			RedirectURL:           getenv("GEMINI_OAUTH_REDIRECT_URL", "http://127.0.0.1:8080/api/admin/oauth/callback/gemini"),
+			RedirectURL:           geminiRedirectURL,
 			Scopes:                defaultScopes(splitCSV(os.Getenv("GEMINI_OAUTH_SCOPES")), []string{"https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"}),
 			UsePKCE:               true,
 			AccessType:            "offline",

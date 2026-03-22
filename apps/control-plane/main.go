@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -280,6 +281,75 @@ func main() {
 				"provider":      providerName,
 				"authorize_url": authURL,
 			})
+			return
+		}
+		if strings.HasSuffix(path, "/oauth/complete") {
+			if r.Method != http.MethodPost {
+				http.NotFound(w, r)
+				return
+			}
+			id := strings.TrimSuffix(path, "/oauth/complete")
+			data, err := svc.Data()
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			account, err := findAccount(data, id)
+			if err != nil {
+				writeError(w, http.StatusNotFound, err)
+				return
+			}
+			cfg, ok := loadOAuthProviderConfigs()[account.Provider]
+			if !ok {
+				writeError(w, http.StatusBadRequest, errString("oauth provider config missing"))
+				return
+			}
+			var req struct {
+				State       string `json:"state"`
+				Code        string `json:"code"`
+				CallbackURL string `json:"callback_url"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeError(w, http.StatusBadRequest, errString("invalid oauth completion payload"))
+				return
+			}
+			state := strings.TrimSpace(req.State)
+			code := strings.TrimSpace(req.Code)
+			if callbackURL := strings.TrimSpace(req.CallbackURL); callbackURL != "" {
+				if parsed, err := url.Parse(callbackURL); err == nil {
+					if state == "" {
+						state = strings.TrimSpace(parsed.Query().Get("state"))
+					}
+					if code == "" {
+						code = strings.TrimSpace(parsed.Query().Get("code"))
+					}
+				}
+			}
+			if state == "" || code == "" {
+				writeError(w, http.StatusBadRequest, errString("missing oauth callback code or state"))
+				return
+			}
+			session, err := svc.OAuthSessionByState(state)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			if session.AccountID != account.ID {
+				writeError(w, http.StatusBadRequest, errString("oauth session account mismatch"))
+				return
+			}
+			tokenPayload, err := exchangeAuthorizationCode(r.Context(), oauthHTTPClient, cfg, session, code)
+			if err != nil {
+				_ = svc.MarkOAuthSessionFailed(state, err.Error())
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			updatedAccount, _, err := svc.CompleteOAuthSession(state, tokenPayload)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, updatedAccount)
 			return
 		}
 		if strings.HasSuffix(path, "/refresh") {
