@@ -57,6 +57,81 @@ func (s *Service) Data() (domain.PlatformData, error) {
 	return s.store.Load()
 }
 
+func (s *Service) OAuthProviderSettings() (map[string]domain.OAuthProviderSetting, error) {
+	data, err := s.store.Load()
+	if err != nil {
+		return nil, err
+	}
+	if data.OAuthProviderSettings == nil {
+		return map[string]domain.OAuthProviderSetting{}, nil
+	}
+	out := make(map[string]domain.OAuthProviderSetting, len(data.OAuthProviderSettings))
+	for key, value := range data.OAuthProviderSettings {
+		out[key] = value
+	}
+	return out, nil
+}
+
+func (s *Service) UpdateOAuthProviderSetting(provider string, patch map[string]any) (domain.OAuthProviderSetting, error) {
+	provider = strings.TrimSpace(strings.ToLower(provider))
+	if provider == "" {
+		return domain.OAuthProviderSetting{}, errors.New("provider is required")
+	}
+	var updated domain.OAuthProviderSetting
+	_, err := s.store.Mutate(func(data *domain.PlatformData) error {
+		if data.OAuthProviderSettings == nil {
+			data.OAuthProviderSettings = map[string]domain.OAuthProviderSetting{}
+		}
+		current := data.OAuthProviderSettings[provider]
+		current.Provider = provider
+		if v, ok := patch["client_id"].(string); ok {
+			current.ClientID = strings.TrimSpace(v)
+		}
+		if v, ok := patch["client_secret"].(string); ok {
+			current.ClientSecret = strings.TrimSpace(v)
+		}
+		if v, ok := patch["authorize_url"].(string); ok {
+			current.AuthorizeURL = strings.TrimSpace(v)
+		}
+		if v, ok := patch["token_url"].(string); ok {
+			current.TokenURL = strings.TrimSpace(v)
+		}
+		if v, ok := patch["redirect_url"].(string); ok {
+			current.RedirectURL = strings.TrimSpace(v)
+		}
+		if v, ok := patch["prompt"].(string); ok {
+			current.Prompt = strings.TrimSpace(v)
+		}
+		if v, ok := patch["access_type"].(string); ok {
+			current.AccessType = strings.TrimSpace(v)
+		}
+		if v, ok := patch["use_pkce"].(bool); ok {
+			current.UsePKCE = v
+		}
+		if v, ok := patch["include_granted_scopes"].(bool); ok {
+			current.IncludeGrantedScopes = v
+		}
+		if v, ok := patch["scopes"].([]any); ok {
+			current.Scopes = normalizeStringSlice(v)
+		}
+		if v, ok := patch["refresh_scopes"].([]any); ok {
+			current.RefreshScopes = normalizeStringSlice(v)
+		}
+		if v, ok := patch["extra_authorize_params"].(map[string]any); ok {
+			current.ExtraAuthorizeParams = map[string]string{}
+			for key, raw := range v {
+				if value, ok := raw.(string); ok {
+					current.ExtraAuthorizeParams[strings.TrimSpace(key)] = strings.TrimSpace(value)
+				}
+			}
+		}
+		data.OAuthProviderSettings[provider] = current
+		updated = current
+		return nil
+	})
+	return updated, err
+}
+
 func (s *Service) ExplainDispatch(modelAlias, apiKey string) (DispatchTrace, error) {
 	data, err := s.store.Load()
 	if err != nil {
@@ -106,6 +181,21 @@ func (s *Service) AddUpstreamAccount(acct domain.UpstreamAccount) (domain.Upstre
 		return nil
 	})
 	return acct, err
+}
+
+func normalizeStringSlice(raw []any) []string {
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		value, ok := item.(string)
+		if !ok {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func (s *Service) UpdateUser(id string, patch map[string]any) (domain.User, error) {

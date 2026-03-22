@@ -24,6 +24,7 @@ const (
 type PlatformData struct {
 	Users              []User              `json:"users"`
 	UpstreamAccounts   []UpstreamAccount   `json:"upstream_accounts"`
+	OAuthProviderSettings map[string]OAuthProviderSetting `json:"oauth_provider_settings,omitempty"`
 	ServicePackages    []ServicePackage    `json:"service_packages"`
 	ModelAliasPolicies []ModelAliasPolicy  `json:"model_alias_policies"`
 	AccountPoolPolicy  []AccountPoolPolicy `json:"account_pool_policy"`
@@ -36,6 +37,22 @@ type PlatformData struct {
 	Orders             []Order             `json:"orders,omitempty"`
 	Payments           []Payment           `json:"payments,omitempty"`
 	WebhookEvents      []WebhookEvent      `json:"webhook_events,omitempty"`
+}
+
+type OAuthProviderSetting struct {
+	Provider             string            `json:"provider"`
+	ClientID             string            `json:"client_id,omitempty"`
+	ClientSecret         string            `json:"client_secret,omitempty"`
+	AuthorizeURL         string            `json:"authorize_url,omitempty"`
+	TokenURL             string            `json:"token_url,omitempty"`
+	RedirectURL          string            `json:"redirect_url,omitempty"`
+	Scopes               []string          `json:"scopes,omitempty"`
+	RefreshScopes        []string          `json:"refresh_scopes,omitempty"`
+	Prompt               string            `json:"prompt,omitempty"`
+	AccessType           string            `json:"access_type,omitempty"`
+	UsePKCE              bool              `json:"use_pkce,omitempty"`
+	IncludeGrantedScopes bool              `json:"include_granted_scopes,omitempty"`
+	ExtraAuthorizeParams map[string]string `json:"extra_authorize_params,omitempty"`
 }
 
 type Product struct {

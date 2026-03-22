@@ -36,7 +36,7 @@ type automationConfig struct {
 	Cooldown               time.Duration
 }
 
-func oauthConfigs() map[string]service.OAuthProviderConfig {
+func oauthBaseConfigs() map[string]service.OAuthProviderConfig {
 	return map[string]service.OAuthProviderConfig{
 		domain.ProviderOpenAI: {
 			Provider:             domain.ProviderOpenAI,
@@ -93,6 +93,64 @@ func oauthConfigs() map[string]service.OAuthProviderConfig {
 	}
 }
 
+func oauthConfigs(svc *service.Service) map[string]service.OAuthProviderConfig {
+	configs := oauthBaseConfigs()
+	if svc == nil {
+		return configs
+	}
+	settings, err := svc.OAuthProviderSettings()
+	if err != nil {
+		return configs
+	}
+	for provider, setting := range settings {
+		cfg, ok := configs[provider]
+		if !ok {
+			cfg = service.OAuthProviderConfig{Provider: provider}
+		}
+		if strings.TrimSpace(setting.ClientID) != "" {
+			cfg.ClientID = strings.TrimSpace(setting.ClientID)
+		}
+		if strings.TrimSpace(setting.ClientSecret) != "" {
+			cfg.ClientSecret = strings.TrimSpace(setting.ClientSecret)
+		}
+		if strings.TrimSpace(setting.AuthorizeURL) != "" {
+			cfg.AuthorizeURL = strings.TrimSpace(setting.AuthorizeURL)
+		}
+		if strings.TrimSpace(setting.TokenURL) != "" {
+			cfg.TokenURL = strings.TrimSpace(setting.TokenURL)
+		}
+		if strings.TrimSpace(setting.RedirectURL) != "" {
+			cfg.RedirectURL = strings.TrimSpace(setting.RedirectURL)
+		}
+		if len(setting.Scopes) > 0 {
+			cfg.Scopes = append([]string(nil), setting.Scopes...)
+		}
+		if len(setting.RefreshScopes) > 0 {
+			cfg.RefreshScopes = append([]string(nil), setting.RefreshScopes...)
+		}
+		if strings.TrimSpace(setting.Prompt) != "" {
+			cfg.Prompt = strings.TrimSpace(setting.Prompt)
+		}
+		if strings.TrimSpace(setting.AccessType) != "" {
+			cfg.AccessType = strings.TrimSpace(setting.AccessType)
+		}
+		if setting.UsePKCE {
+			cfg.UsePKCE = true
+		}
+		if setting.IncludeGrantedScopes {
+			cfg.IncludeGrantedScopes = true
+		}
+		if len(setting.ExtraAuthorizeParams) > 0 {
+			cfg.ExtraAuthorizeParams = map[string]string{}
+			for key, value := range setting.ExtraAuthorizeParams {
+				cfg.ExtraAuthorizeParams[key] = value
+			}
+		}
+		configs[provider] = cfg
+	}
+	return configs
+}
+
 func loadAutomationConfig() automationConfig {
 	return automationConfig{
 		Enabled:                strings.ToLower(getenv("CONTROL_PLANE_AUTOMATION_ENABLED", "true")) != "false",
@@ -123,7 +181,7 @@ func defaultScopes(current []string, fallback []string) []string {
 	return append([]string(nil), fallback...)
 }
 
-func refreshExpiringAccounts(ctx context.Context, svc *service.Service, client *http.Client, configs map[string]service.OAuthProviderConfig) error {
+func refreshExpiringAccounts(ctx context.Context, svc *service.Service, client *http.Client, configs map[string]service.OAuthProviderConfig, automation automationConfig) error {
 	data, err := svc.Data()
 	if err != nil {
 		return err
@@ -139,20 +197,20 @@ func refreshExpiringAccounts(ctx context.Context, svc *service.Service, client *
 		if !service.AccountCanRefresh(account) {
 			continue
 		}
-		if _, err := refreshAccount(ctx, svc, client, account, configs); err != nil {
+		if _, err := refreshAccount(ctx, svc, client, account, configs, automation); err != nil {
 			return nil
 		}
 	}
 	return nil
 }
 
-func runAutomationWorkers(ctx context.Context, svc *service.Service, client *http.Client, registry *proxyproviders.Registry, configs map[string]service.OAuthProviderConfig, automation automationConfig) {
+func runAutomationWorkers(ctx context.Context, svc *service.Service, client *http.Client, registry *proxyproviders.Registry, loadConfigs func() map[string]service.OAuthProviderConfig, automation automationConfig) {
 	if !automation.Enabled {
 		return
 	}
 
 	startTickerWorker(ctx, automation.RefreshInterval, func() {
-		_ = refreshExpiringAccounts(context.Background(), svc, client, configs)
+		_ = refreshExpiringAccounts(context.Background(), svc, client, loadConfigs(), automation)
 	})
 	startTickerWorker(ctx, automation.HealthcheckInterval, func() {
 		_ = runHealthChecks(context.Background(), svc, registry)
@@ -202,7 +260,7 @@ func runHealthChecks(ctx context.Context, svc *service.Service, registry *proxyp
 	return nil
 }
 
-func refreshAccount(ctx context.Context, svc *service.Service, client *http.Client, account domain.UpstreamAccount, configs map[string]service.OAuthProviderConfig) (domain.UpstreamAccount, error) {
+func refreshAccount(ctx context.Context, svc *service.Service, client *http.Client, account domain.UpstreamAccount, configs map[string]service.OAuthProviderConfig, automation automationConfig) (domain.UpstreamAccount, error) {
 	cfg, ok := configs[account.Provider]
 	if !ok {
 		return domain.UpstreamAccount{}, errors.New("oauth config missing for provider")
@@ -217,6 +275,10 @@ func refreshAccount(ctx context.Context, svc *service.Service, client *http.Clie
 	})
 	if err != nil {
 		updated, _ := svc.MarkAccountRefreshFailure(account.ID, err.Error())
+		_, _ = svc.RecordUsageOutcome(account.ID, "auth_failed", err.Error(), service.AccountHealthPolicy{
+			FailureThreshold: automation.FailureThreshold,
+			Cooldown:         automation.Cooldown,
+		})
 		return updated, err
 	}
 	return svc.RefreshAccountTokens(account.ID, payload)

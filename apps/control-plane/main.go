@@ -31,7 +31,9 @@ func main() {
 	}
 	svc := service.New(st)
 	providerRegistry := proxyproviders.NewRegistry(http.DefaultClient)
-	oauthProviderConfigs := oauthConfigs()
+	loadOAuthProviderConfigs := func() map[string]service.OAuthProviderConfig {
+		return oauthConfigs(svc)
+	}
 	oauthHTTPClient := http.DefaultClient
 	automation := loadAutomationConfig()
 	healthPolicy := service.AccountHealthPolicy{
@@ -39,7 +41,7 @@ func main() {
 		Cooldown:         automation.Cooldown,
 	}
 	mux := http.NewServeMux()
-	runAutomationWorkers(context.Background(), svc, oauthHTTPClient, providerRegistry, oauthProviderConfigs, automation)
+	runAutomationWorkers(context.Background(), svc, oauthHTTPClient, providerRegistry, loadOAuthProviderConfigs, automation)
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -75,12 +77,49 @@ func main() {
 		writeJSON(w, http.StatusOK, probeKernelStatus(r.Context(), http.DefaultClient, runtimeConfig))
 	}))
 
+	mux.HandleFunc("/api/admin/oauth-configs", requireRole(svc, "admin", func(w http.ResponseWriter, r *http.Request, _ domain.User) {
+		if r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		settings, err := svc.OAuthProviderSettings()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		configs := loadOAuthProviderConfigs()
+		writeJSON(w, http.StatusOK, map[string]any{"settings": settings, "effective": configs})
+	}))
+
+	mux.HandleFunc("/api/admin/oauth-configs/", requireRole(svc, "admin", func(w http.ResponseWriter, r *http.Request, _ domain.User) {
+		if r.Method != http.MethodPatch {
+			http.NotFound(w, r)
+			return
+		}
+		provider := strings.TrimPrefix(r.URL.Path, "/api/admin/oauth-configs/")
+		if provider == "" {
+			writeError(w, http.StatusBadRequest, errString("missing provider"))
+			return
+		}
+		var patch map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		setting, err := svc.UpdateOAuthProviderSetting(provider, patch)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, setting)
+	}))
+
 	mux.HandleFunc("/api/admin/data", requireRole(svc, "admin", func(w http.ResponseWriter, r *http.Request, _ domain.User) {
 		if r.Method != http.MethodGet {
 			http.NotFound(w, r)
 			return
 		}
-		_ = refreshExpiringAccounts(r.Context(), svc, oauthHTTPClient, oauthProviderConfigs)
+		_ = refreshExpiringAccounts(r.Context(), svc, oauthHTTPClient, loadOAuthProviderConfigs(), automation)
 		data, err := svc.Data()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
@@ -217,7 +256,7 @@ func main() {
 				writeError(w, http.StatusNotFound, err)
 				return
 			}
-			cfg, ok := oauthProviderConfigs[account.Provider]
+			cfg, ok := loadOAuthProviderConfigs()[account.Provider]
 			if !ok {
 				writeError(w, http.StatusBadRequest, errString("oauth provider config missing"))
 				return
@@ -259,7 +298,7 @@ func main() {
 				writeError(w, http.StatusNotFound, err)
 				return
 			}
-			updated, err := refreshAccount(r.Context(), svc, oauthHTTPClient, account, oauthProviderConfigs)
+			updated, err := refreshAccount(r.Context(), svc, oauthHTTPClient, account, loadOAuthProviderConfigs(), automation)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err)
 				return
@@ -486,7 +525,7 @@ func main() {
 			http.NotFound(w, r)
 			return
 		}
-		if err := refreshExpiringAccounts(r.Context(), svc, oauthHTTPClient, oauthProviderConfigs); err != nil {
+		if err := refreshExpiringAccounts(r.Context(), svc, oauthHTTPClient, loadOAuthProviderConfigs(), automation); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -503,7 +542,7 @@ func main() {
 			http.NotFound(w, r)
 			return
 		}
-		_ = refreshExpiringAccounts(r.Context(), svc, oauthHTTPClient, oauthProviderConfigs)
+		_ = refreshExpiringAccounts(r.Context(), svc, oauthHTTPClient, loadOAuthProviderConfigs(), automation)
 		var req struct {
 			APIKey     string `json:"api_key"`
 			ModelAlias string `json:"model_alias"`
@@ -544,7 +583,7 @@ func main() {
 			"proxy_core_primary_origin": runtimeConfig.PrimaryOrigin,
 			"proxy_core_origin":         runtimeConfig.PrimaryOrigin,
 			"proxy_core_origins":        runtimeConfig.Origins,
-			"oauth_providers":           mapsKeys(oauthProviderConfigs),
+			"oauth_providers":           mapsKeys(loadOAuthProviderConfigs()),
 		})
 	})
 
@@ -555,7 +594,7 @@ func main() {
 			return
 		}
 		providerName := strings.TrimPrefix(r.URL.Path, "/api/admin/oauth/callback/")
-		cfg, ok := oauthProviderConfigs[providerName]
+		cfg, ok := loadOAuthProviderConfigs()[providerName]
 		if !ok {
 			writeError(w, http.StatusBadRequest, errString("unknown oauth provider"))
 			return
@@ -806,7 +845,7 @@ func main() {
 			http.NotFound(w, r)
 			return
 		}
-		_ = refreshExpiringAccounts(r.Context(), svc, oauthHTTPClient, oauthProviderConfigs)
+		_ = refreshExpiringAccounts(r.Context(), svc, oauthHTTPClient, loadOAuthProviderConfigs(), automation)
 		data, err := svc.Data()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)

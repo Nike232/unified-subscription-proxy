@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { formatDate } from "../lib/format";
-import type { AdminUpstreamAccountItem } from "../lib/types";
+import type { AdminOAuthProviderConfig, AdminUpstreamAccountItem } from "../lib/types";
 
 const providerOptions = ["openai", "gemini", "claude", "codex", "antigravity"] as const;
 const statusOptions = ["active", "invalid", "disabled"] as const;
@@ -24,6 +24,24 @@ const emptyEditor = {
 };
 
 type EditorState = typeof emptyEditor;
+type OAuthConfigResponse = {
+  settings?: Record<string, AdminOAuthProviderConfig>;
+  effective?: Record<string, AdminOAuthProviderConfig>;
+};
+
+const emptyOAuthEditor = {
+  client_id: "",
+  client_secret: "",
+  authorize_url: "",
+  token_url: "",
+  redirect_url: "",
+  scopes: "",
+  refresh_scopes: "",
+  prompt: "",
+  access_type: "",
+  use_pkce: true,
+  include_granted_scopes: false,
+};
 
 function maskSecret(value: string) {
   if (!value) return "未设置";
@@ -56,6 +74,22 @@ function buildEditor(account?: AdminUpstreamAccountItem | null): EditorState {
   };
 }
 
+function buildOAuthEditor(config?: AdminOAuthProviderConfig | null) {
+  return {
+    client_id: config?.ClientID || "",
+    client_secret: config?.ClientSecret || "",
+    authorize_url: config?.AuthorizeURL || "",
+    token_url: config?.TokenURL || "",
+    redirect_url: config?.RedirectURL || "",
+    scopes: (config?.Scopes ?? []).join(", "),
+    refresh_scopes: (config?.RefreshScopes ?? []).join(", "),
+    prompt: config?.Prompt || "",
+    access_type: config?.AccessType || "",
+    use_pkce: config?.UsePKCE ?? true,
+    include_granted_scopes: config?.IncludeGrantedScopes ?? false,
+  };
+}
+
 export default function AdminAccountsPage() {
   const [accounts, setAccounts] = useState<AdminUpstreamAccountItem[]>([]);
   const [selected, setSelected] = useState<AdminUpstreamAccountItem | null>(null);
@@ -63,12 +97,16 @@ export default function AdminAccountsPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [savingOAuth, setSavingOAuth] = useState(false);
   const [creating, setCreating] = useState(false);
   const [busyAction, setBusyAction] = useState("");
+  const [oauthConfigs, setOAuthConfigs] = useState<Record<string, AdminOAuthProviderConfig>>({});
+  const [oauthEditor, setOAuthEditor] = useState(emptyOAuthEditor);
   const [showSecrets, setShowSecrets] = useState({
     api_key: false,
     access_token: false,
     refresh_token: false,
+    oauth_client_secret: false,
   });
   const [filters, setFilters] = useState({
     query: "",
@@ -79,7 +117,9 @@ export default function AdminAccountsPage() {
 
   const load = async (preferredID?: string) => {
     const payload = (await apiFetch<AdminUpstreamAccountItem[]>("/api/admin/upstream-accounts")) ?? [];
+    const oauthPayload = (await apiFetch<OAuthConfigResponse>("/api/admin/oauth-configs")) ?? {};
     setAccounts(payload);
+    setOAuthConfigs(oauthPayload.effective ?? {});
 
     const nextSelectedID = preferredID ?? selected?.id;
     if (creating) {
@@ -91,6 +131,7 @@ export default function AdminAccountsPage() {
     const matched = payload.find((item) => item.id === nextSelectedID) ?? null;
     setSelected(matched);
     setEditor(buildEditor(matched));
+    setOAuthEditor(buildOAuthEditor((oauthPayload.effective ?? {})[matched?.provider || ""]));
   };
 
   useEffect(() => {
@@ -134,6 +175,7 @@ export default function AdminAccountsPage() {
     setCreating(false);
     setSelected(account);
     setEditor(buildEditor(account));
+    setOAuthEditor(buildOAuthEditor(oauthConfigs[account.provider]));
     setError("");
     setMessage("");
   };
@@ -142,7 +184,8 @@ export default function AdminAccountsPage() {
     setCreating(true);
     setSelected(null);
     setEditor({ ...emptyEditor });
-    setShowSecrets({ api_key: false, access_token: false, refresh_token: false });
+    setOAuthEditor(buildOAuthEditor(oauthConfigs.openai));
+    setShowSecrets({ api_key: false, access_token: false, refresh_token: false, oauth_client_secret: false });
     setError("");
     setMessage("");
   };
@@ -182,6 +225,39 @@ export default function AdminAccountsPage() {
       setError(err instanceof Error ? err.message : "发起 OAuth 登录失败。");
     } finally {
       setBusyAction("");
+    }
+  };
+
+  const saveOAuthConfig = async () => {
+    const provider = editor.provider;
+    setSavingOAuth(true);
+    setError("");
+    setMessage("");
+    try {
+      await apiFetch(`/api/admin/oauth-configs/${provider}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          client_id: oauthEditor.client_id,
+          client_secret: oauthEditor.client_secret,
+          authorize_url: oauthEditor.authorize_url,
+          token_url: oauthEditor.token_url,
+          redirect_url: oauthEditor.redirect_url,
+          scopes: oauthEditor.scopes.split(",").map((item) => item.trim()).filter(Boolean),
+          refresh_scopes: oauthEditor.refresh_scopes.split(",").map((item) => item.trim()).filter(Boolean),
+          prompt: oauthEditor.prompt,
+          access_type: oauthEditor.access_type,
+          use_pkce: oauthEditor.use_pkce,
+          include_granted_scopes: oauthEditor.include_granted_scopes,
+        }),
+      });
+      const oauthPayload = (await apiFetch<OAuthConfigResponse>("/api/admin/oauth-configs")) ?? {};
+      setOAuthConfigs(oauthPayload.effective ?? {});
+      setOAuthEditor(buildOAuthEditor((oauthPayload.effective ?? {})[provider]));
+      setMessage(`${provider} OAuth 配置已保存。`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存 OAuth 配置失败。");
+    } finally {
+      setSavingOAuth(false);
     }
   };
 
@@ -431,6 +507,86 @@ export default function AdminAccountsPage() {
               {(editor.provider === "openai" || editor.provider === "gemini") ? (
                 <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-700">
                   当前推荐以 OAuth 登录接入该 provider。若尚未完成授权，可临时填写 token 或兼容 API key 作为兜底。
+                </div>
+              ) : null}
+
+              {(editor.provider === "openai" || editor.provider === "gemini") ? (
+                <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-800">OAuth 基础配置</h4>
+                      <p className="mt-1 text-xs text-slate-500">保存后即可直接点击上方的 OAuth 登录，走完整授权回调流程。</p>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs font-medium ${oauthEditor.client_id && oauthEditor.authorize_url && oauthEditor.token_url && oauthEditor.redirect_url ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                      {oauthEditor.client_id && oauthEditor.authorize_url && oauthEditor.token_url && oauthEditor.redirect_url ? "已配置" : "待配置"}
+                    </span>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-slate-600">Client ID</span>
+                      <input className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3" value={oauthEditor.client_id} onChange={(e) => setOAuthEditor((prev) => ({ ...prev, client_id: e.target.value }))} />
+                    </label>
+                    <label className="block">
+                      <span className="mb-2 flex items-center justify-between gap-3 text-sm font-medium text-slate-600">
+                        <span>Client Secret</span>
+                        <button type="button" className="text-xs font-medium text-blue-600 hover:text-blue-700" onClick={() => setShowSecrets((prev) => ({ ...prev, oauth_client_secret: !prev.oauth_client_secret }))}>
+                          {showSecrets.oauth_client_secret ? "隐藏" : "显示"}
+                        </button>
+                      </span>
+                      {showSecrets.oauth_client_secret ? (
+                        <input className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3" value={oauthEditor.client_secret} onChange={(e) => setOAuthEditor((prev) => ({ ...prev, client_secret: e.target.value }))} />
+                      ) : (
+                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 font-mono text-xs text-slate-500">{maskSecret(oauthEditor.client_secret)}</div>
+                      )}
+                    </label>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-slate-600">Authorize URL</span>
+                      <input className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3" value={oauthEditor.authorize_url} onChange={(e) => setOAuthEditor((prev) => ({ ...prev, authorize_url: e.target.value }))} />
+                    </label>
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-slate-600">Token URL</span>
+                      <input className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3" value={oauthEditor.token_url} onChange={(e) => setOAuthEditor((prev) => ({ ...prev, token_url: e.target.value }))} />
+                    </label>
+                  </div>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-slate-600">Redirect URL</span>
+                    <input className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3" value={oauthEditor.redirect_url} onChange={(e) => setOAuthEditor((prev) => ({ ...prev, redirect_url: e.target.value }))} />
+                  </label>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-slate-600">Scopes</span>
+                      <input className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3" value={oauthEditor.scopes} onChange={(e) => setOAuthEditor((prev) => ({ ...prev, scopes: e.target.value }))} placeholder="逗号分隔" />
+                    </label>
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-slate-600">Refresh Scopes</span>
+                      <input className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3" value={oauthEditor.refresh_scopes} onChange={(e) => setOAuthEditor((prev) => ({ ...prev, refresh_scopes: e.target.value }))} placeholder="逗号分隔" />
+                    </label>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-slate-600">Prompt</span>
+                      <input className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3" value={oauthEditor.prompt} onChange={(e) => setOAuthEditor((prev) => ({ ...prev, prompt: e.target.value }))} />
+                    </label>
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-slate-600">Access Type</span>
+                      <input className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3" value={oauthEditor.access_type} onChange={(e) => setOAuthEditor((prev) => ({ ...prev, access_type: e.target.value }))} />
+                    </label>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                      <input type="checkbox" checked={oauthEditor.use_pkce} onChange={(e) => setOAuthEditor((prev) => ({ ...prev, use_pkce: e.target.checked }))} />
+                      启用 PKCE
+                    </label>
+                    <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                      <input type="checkbox" checked={oauthEditor.include_granted_scopes} onChange={(e) => setOAuthEditor((prev) => ({ ...prev, include_granted_scopes: e.target.checked }))} />
+                      自动附带已授权 Scopes
+                    </label>
+                  </div>
+                  <button className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400" disabled={savingOAuth} onClick={() => void saveOAuthConfig()}>
+                    {savingOAuth ? "保存 OAuth 配置中..." : `保存 ${editor.provider} OAuth 配置`}
+                  </button>
                 </div>
               ) : null}
 

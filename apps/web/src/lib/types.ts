@@ -135,6 +135,22 @@ export interface AdminUpstreamAccountItem {
   last_refreshed_at?: string;
 }
 
+export interface AdminOAuthProviderConfig {
+  Provider?: string;
+  ClientID?: string;
+  ClientSecret?: string;
+  AuthorizeURL?: string;
+  TokenURL?: string;
+  RedirectURL?: string;
+  Scopes?: string[];
+  RefreshScopes?: string[];
+  Prompt?: string;
+  AccessType?: string;
+  UsePKCE?: boolean;
+  IncludeGrantedScopes?: boolean;
+  ExtraAuthorizeParams?: Record<string, string>;
+}
+
 export interface AdminPackageItem {
   id: string;
   name: string;
