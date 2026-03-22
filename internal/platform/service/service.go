@@ -144,7 +144,6 @@ func (s *Service) AddUpstreamAccount(acct domain.UpstreamAccount) (domain.Upstre
 	acct.Provider = strings.TrimSpace(strings.ToLower(acct.Provider))
 	acct.DisplayName = strings.TrimSpace(acct.DisplayName)
 	acct.Email = strings.TrimSpace(acct.Email)
-	acct.AuthMode = strings.TrimSpace(acct.AuthMode)
 	acct.Tier = strings.TrimSpace(acct.Tier)
 	if strings.TrimSpace(acct.Provider) == "" {
 		return domain.UpstreamAccount{}, errors.New("provider is required")
@@ -155,16 +154,7 @@ func (s *Service) AddUpstreamAccount(acct domain.UpstreamAccount) (domain.Upstre
 	if acct.Meta == nil {
 		acct.Meta = map[string]string{}
 	}
-	if len(acct.SupportsModels) > 0 {
-		models := make([]string, 0, len(acct.SupportsModels))
-		for _, model := range acct.SupportsModels {
-			model = strings.TrimSpace(model)
-			if model != "" {
-				models = append(models, model)
-			}
-		}
-		acct.SupportsModels = models
-	}
+	acct = applyProviderDefaults(acct)
 	if acct.ID == "" {
 		acct.ID = "acct-" + randomID(4)
 	}
@@ -196,6 +186,52 @@ func normalizeStringSlice(raw []any) []string {
 		}
 	}
 	return out
+}
+
+func applyProviderDefaults(acct domain.UpstreamAccount) domain.UpstreamAccount {
+	acct.AuthMode = "oauth"
+	acct.SupportsModels = providerDefaultModels(acct.Provider)
+	if acct.Meta == nil {
+		acct.Meta = map[string]string{}
+	}
+	if strings.TrimSpace(acct.Meta["base_url"]) == "" {
+		if baseURL := providerDefaultBaseURL(acct.Provider); baseURL != "" {
+			acct.Meta["base_url"] = baseURL
+		}
+	}
+	return acct
+}
+
+func providerDefaultModels(provider string) []string {
+	switch provider {
+	case domain.ProviderOpenAI:
+		return []string{"gpt-5", "gpt-4.1"}
+	case domain.ProviderGemini:
+		return []string{"gemini-2.5-pro", "gemini-2.5-flash"}
+	case domain.ProviderClaude:
+		return []string{"claude-sonnet-4.5", "claude-opus-4.1"}
+	case domain.ProviderCodex:
+		return []string{"gpt-5-codex", "gpt-5"}
+	case domain.ProviderAntigravity:
+		return []string{"hybrid-premium"}
+	default:
+		return nil
+	}
+}
+
+func providerDefaultBaseURL(provider string) string {
+	switch provider {
+	case domain.ProviderOpenAI, domain.ProviderCodex:
+		return "https://api.openai.com"
+	case domain.ProviderGemini:
+		return "https://generativelanguage.googleapis.com"
+	case domain.ProviderClaude:
+		return "https://api.anthropic.com"
+	case domain.ProviderAntigravity:
+		return "https://api.antigravity.example"
+	default:
+		return ""
+	}
 }
 
 func (s *Service) UpdateUser(id string, patch map[string]any) (domain.User, error) {
@@ -254,22 +290,13 @@ func (s *Service) UpdateUpstreamAccount(id string, patch map[string]any) (domain
 				data.UpstreamAccounts[i].Email = strings.TrimSpace(v)
 			}
 			if v, ok := patch["auth_mode"].(string); ok && strings.TrimSpace(v) != "" {
-				data.UpstreamAccounts[i].AuthMode = v
+				data.UpstreamAccounts[i].AuthMode = "oauth"
 			}
 			if v, ok := patch["priority"].(float64); ok {
 				data.UpstreamAccounts[i].Priority = int(v)
 			}
 			if v, ok := patch["weight"].(float64); ok && int(v) > 0 {
 				data.UpstreamAccounts[i].Weight = int(v)
-			}
-			if v, ok := patch["supports_models"].([]any); ok {
-				models := make([]string, 0, len(v))
-				for _, raw := range v {
-					if model, ok := raw.(string); ok && strings.TrimSpace(model) != "" {
-						models = append(models, model)
-					}
-				}
-				data.UpstreamAccounts[i].SupportsModels = models
 			}
 			if v, ok := patch["meta"].(map[string]any); ok {
 				data.UpstreamAccounts[i].Meta = map[string]string{}
@@ -279,6 +306,7 @@ func (s *Service) UpdateUpstreamAccount(id string, patch map[string]any) (domain
 					}
 				}
 			}
+			data.UpstreamAccounts[i] = applyProviderDefaults(data.UpstreamAccounts[i])
 			data.UpstreamAccounts[i].LastRefreshedAt = time.Now().UTC()
 			updated = data.UpstreamAccounts[i]
 			return nil

@@ -6,18 +6,29 @@ import type { AdminOAuthProviderConfig, AdminUpstreamAccountItem } from "../lib/
 const providerOptions = ["openai", "gemini", "claude", "codex", "antigravity"] as const;
 const statusOptions = ["active", "invalid", "disabled"] as const;
 const oauthProviders = new Set(["openai", "gemini", "claude", "codex", "antigravity"]);
+const providerModelDefaults: Record<string, string[]> = {
+  openai: ["gpt-5", "gpt-4.1"],
+  gemini: ["gemini-2.5-pro", "gemini-2.5-flash"],
+  claude: ["claude-sonnet-4.5", "claude-opus-4.1"],
+  codex: ["gpt-5-codex", "gpt-5"],
+  antigravity: ["hybrid-premium"],
+};
+const providerBaseURLDefaults: Record<string, string> = {
+  openai: "https://api.openai.com",
+  gemini: "https://generativelanguage.googleapis.com",
+  claude: "https://api.anthropic.com",
+  codex: "https://api.openai.com",
+  antigravity: "https://api.antigravity.example",
+};
 
 const emptyEditor = {
   provider: "openai",
   display_name: "",
   email: "",
   status: "active",
-  auth_mode: "",
   priority: "10",
   weight: "10",
-  supports_models: "",
   base_url: "",
-  api_key: "",
   access_token: "",
   refresh_token: "",
   expires_at: "",
@@ -62,12 +73,9 @@ function buildEditor(account?: AdminUpstreamAccountItem | null): EditorState {
     display_name: account.display_name || "",
     email: account.email || "",
     status: account.status || "active",
-    auth_mode: account.auth_mode || "",
     priority: String(account.priority ?? 10),
     weight: String(account.weight ?? 10),
-    supports_models: (account.supports_models ?? []).join(", "),
     base_url: account.meta?.base_url || "",
-    api_key: account.meta?.api_key || "",
     access_token: account.meta?.access_token || "",
     refresh_token: account.meta?.refresh_token || "",
     expires_at: account.meta?.expires_at || "",
@@ -183,7 +191,7 @@ export default function AdminAccountsPage() {
   const startCreate = () => {
     setCreating(true);
     setSelected(null);
-    setEditor({ ...emptyEditor });
+    setEditor({ ...emptyEditor, base_url: providerBaseURLDefaults.openai || "" });
     setOAuthEditor(buildOAuthEditor(oauthConfigs.openai));
     setShowSecrets({ api_key: false, access_token: false, refresh_token: false, oauth_client_secret: false });
     setError("");
@@ -270,14 +278,13 @@ export default function AdminAccountsPage() {
       display_name: editor.display_name,
       email: editor.email,
       status: editor.status,
-      auth_mode: editor.auth_mode,
+      auth_mode: "oauth",
       priority: Number(editor.priority || 0),
       weight: Number(editor.weight || 0),
-      supports_models: editor.supports_models.split(",").map((item) => item.trim()).filter(Boolean),
+      supports_models: providerModelDefaults[editor.provider] ?? [],
       meta: {
         ...(selected?.meta ?? {}),
-        base_url: editor.base_url,
-        api_key: editor.api_key,
+        base_url: editor.base_url || providerBaseURLDefaults[editor.provider] || "",
         access_token: editor.access_token,
         refresh_token: editor.refresh_token,
         expires_at: editor.expires_at,
@@ -398,8 +405,8 @@ export default function AdminAccountsPage() {
                       </div>
                       <div className="mt-3 grid gap-1 text-sm text-slate-500">
                         <p>账号邮箱：{account.email || "未设置"}</p>
-                        <p>鉴权方式：{account.auth_mode || "未设置"}</p>
-                        <p>支持模型：{account.supports_models?.join(", ") || "未设置"}</p>
+                        <p>鉴权方式：OAuth</p>
+                        <p>支持模型：{(providerModelDefaults[account.provider] ?? account.supports_models ?? []).join(", ") || "未设置"}</p>
                         <p>最近刷新：{formatDate(account.last_refreshed_at)}</p>
                         <p>过期时间：{formatDate(accountMetaValue(account, "expires_at"))}</p>
                         <p>最近失败：{accountMetaValue(account, "last_failure_reason") || "无"}</p>
@@ -450,7 +457,16 @@ export default function AdminAccountsPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="block">
                   <span className="mb-2 block text-sm font-medium text-slate-600">Provider</span>
-                  <select className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" value={editor.provider} onChange={(e) => setEditor((prev) => ({ ...prev, provider: e.target.value }))} disabled={!creating}>
+                  <select
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
+                    value={editor.provider}
+                    onChange={(e) => {
+                      const provider = e.target.value;
+                      setEditor((prev) => ({ ...prev, provider, base_url: providerBaseURLDefaults[provider] || prev.base_url }));
+                      setOAuthEditor(buildOAuthEditor(oauthConfigs[provider]));
+                    }}
+                    disabled={!creating}
+                  >
                     {providerOptions.map((provider) => (
                       <option key={provider} value={provider}>
                         {provider}
@@ -468,10 +484,11 @@ export default function AdminAccountsPage() {
                   <span className="mb-2 block text-sm font-medium text-slate-600">显示名称</span>
                   <input className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" value={editor.display_name} onChange={(e) => setEditor((prev) => ({ ...prev, display_name: e.target.value }))} />
                 </label>
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium text-slate-600">鉴权方式</span>
-                  <input className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" value={editor.auth_mode} onChange={(e) => setEditor((prev) => ({ ...prev, auth_mode: e.target.value }))} placeholder="oauth / api_key / bearer" />
-                </label>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="text-sm font-medium text-slate-600">鉴权方式</div>
+                  <div className="mt-2 text-sm text-slate-800">OAuth</div>
+                  <div className="mt-1 text-xs text-slate-500">当前统一走 OAuth / Token 账号池，不再手动切换鉴权方式。</div>
+                </div>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="block">
@@ -484,10 +501,11 @@ export default function AdminAccountsPage() {
                     ))}
                   </select>
                 </label>
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium text-slate-600">支持模型</span>
-                  <input className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" value={editor.supports_models} onChange={(e) => setEditor((prev) => ({ ...prev, supports_models: e.target.value }))} placeholder="逗号分隔，例如 gpt-fast, gpt-reasoning" />
-                </label>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="text-sm font-medium text-slate-600">支持模型</div>
+                  <div className="mt-2 text-sm text-slate-800">{(providerModelDefaults[editor.provider] ?? []).join(", ") || "未设置"}</div>
+                  <div className="mt-1 text-xs text-slate-500">按 provider 自动带出，不再手动填写。</div>
+                </div>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="block">
@@ -497,16 +515,18 @@ export default function AdminAccountsPage() {
                 <label className="block">
                   <span className="mb-2 block text-sm font-medium text-slate-600">权重</span>
                   <input className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" type="number" value={editor.weight} onChange={(e) => setEditor((prev) => ({ ...prev, weight: e.target.value }))} />
+                  <span className="mt-2 block text-xs text-slate-500">权重用于同优先级账号之间的调度倾向。值越大，被系统选中的机会越高；一般保持默认值即可。</span>
                 </label>
               </div>
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-slate-600">Base URL</span>
                 <input className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" value={editor.base_url} onChange={(e) => setEditor((prev) => ({ ...prev, base_url: e.target.value }))} />
+                <span className="mt-2 block text-xs text-slate-500">Base URL 是上游接口根地址。通常保持默认值即可，只有你在接自定义网关或第三方中转时才需要修改。</span>
               </label>
 
               {(editor.provider === "openai" || editor.provider === "gemini") ? (
                 <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-700">
-                  当前推荐以 OAuth 登录接入该 provider。若尚未完成授权，可临时填写 token 或兼容 API key 作为兜底。
+                  当前按其他仓库的做法，默认以 OAuth 登录为主。先保存 OAuth 配置，再点击上方的 OAuth 登录即可，无需先手动填 API key。
                 </div>
               ) : null}
 
@@ -590,12 +610,10 @@ export default function AdminAccountsPage() {
                 </div>
               ) : null}
 
-              {(["api_key", "access_token", "refresh_token"] as const).map((key) => (
+              {(["access_token", "refresh_token"] as const).map((key) => (
                 <label key={key} className="block">
                   <span className="mb-2 flex items-center justify-between gap-3 text-sm font-medium text-slate-600">
-                    <span>
-                      {key === "api_key" ? "API Key" : key === "access_token" ? "Access Token" : "Refresh Token"}
-                    </span>
+                    <span>{key === "access_token" ? "Access Token" : "Refresh Token"}</span>
                     <button
                       type="button"
                       className="text-xs font-medium text-blue-600 hover:text-blue-700"
