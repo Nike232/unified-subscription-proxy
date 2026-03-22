@@ -75,7 +75,9 @@ func oauthBaseConfigs() map[string]service.OAuthProviderConfig {
 			Scopes:               defaultScopes(splitCSV(os.Getenv("OPENAI_OAUTH_SCOPES")), []string{"openid", "profile", "email", "offline_access"}),
 			RefreshScopes:        defaultScopes(splitCSV(os.Getenv("OPENAI_OAUTH_REFRESH_SCOPES")), []string{"openid", "profile", "email"}),
 			UsePKCE:              true,
-			ExtraAuthorizeParams: map[string]string{"id_token_add_organizations": "true", "codex_cli_simplified_flow": "true"},
+			// Use the builtin OpenAI client, but keep the browser flow standard.
+			// The CLI-specific simplified flow tends to time out without a local listener.
+			ExtraAuthorizeParams: map[string]string{"id_token_add_organizations": "true"},
 		},
 		domain.ProviderGemini: {
 			Provider:              domain.ProviderGemini,

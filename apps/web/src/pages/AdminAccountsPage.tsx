@@ -324,7 +324,7 @@ export default function AdminAccountsPage() {
       });
       setManualOAuthInput("");
       window.open(payload.authorize_url, "_blank", "noopener,noreferrer");
-      setMessage(`${account.provider} OAuth 授权页已打开。若浏览器没有自动回跳，请把完整回调 URL 或授权码粘贴到下方完成登录。`);
+      setMessage(`${account.provider} OAuth 授权页已打开。若最后跳到 localhost 页面超时或打不开，请直接复制地址栏里的完整回调 URL，粘贴到下方完成登录。`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "发起 OAuth 登录失败。");
     } finally {
@@ -657,7 +657,7 @@ export default function AdminAccountsPage() {
 
               {oauthProvidersWithBuiltinFlow.has(editor.provider) ? (
                 <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-700">
-                  当前按老项目的做法，默认以 OAuth 登录为主。OpenAI/Gemini 不应该先让你手动理解整套 OAuth 配置，先直接点上方的 OAuth 登录；如果没有自动完成，再把回调 URL 或授权码粘贴回来。
+                  当前按老项目的做法，默认以 OAuth 登录为主。OpenAI/Gemini 不应该先让你手动理解整套 OAuth 配置，先直接点上方的 OAuth 登录；如果最后停在 localhost 超时页，也属于正常现象，直接把地址栏里的完整回调 URL 或授权码粘贴回来即可。
                 </div>
               ) : null}
 
@@ -665,7 +665,7 @@ export default function AdminAccountsPage() {
                 <div className="space-y-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
                   <div className="text-sm text-blue-900">
                     <p>授权窗口已经打开。</p>
-                    <p className="mt-1">如果浏览器未自动完成，请粘贴完整回调 URL，或者只粘贴授权码。</p>
+                    <p className="mt-1">如果浏览器未自动完成，或者最后停在 localhost 超时页，请粘贴完整回调 URL，或者只粘贴授权码。</p>
                     {pendingOAuth.state ? <p className="mt-2 break-all font-mono text-xs">state: {pendingOAuth.state}</p> : null}
                   </div>
                   <textarea
@@ -706,7 +706,7 @@ export default function AdminAccountsPage() {
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                     <div>当前 Redirect URL：<span className="font-mono text-xs break-all">{oauthEditor.redirect_url || "未配置"}</span></div>
-                    <div className="mt-1">OpenAI 默认按 Codex CLI 方式使用 localhost 回调；Gemini 默认更接近 Gemini CLI / Code Assist 方式。两者如果浏览器没有自动完成，都可以把回调 URL 或授权码粘贴回来。</div>
+                    <div className="mt-1">OpenAI 默认使用 localhost 回调，但这里走的是更适合网页后台的标准 OAuth 流；Gemini 默认更接近 Gemini CLI / Code Assist 方式。两者如果浏览器没有自动完成，都可以把回调 URL 或授权码粘贴回来。</div>
                   </div>
                   <button
                     type="button"
