@@ -66,11 +66,29 @@ func (s *Service) ExplainDispatch(modelAlias, apiKey string) (DispatchTrace, err
 }
 
 func (s *Service) AddUpstreamAccount(acct domain.UpstreamAccount) (domain.UpstreamAccount, error) {
+	acct.Provider = strings.TrimSpace(strings.ToLower(acct.Provider))
+	acct.DisplayName = strings.TrimSpace(acct.DisplayName)
+	acct.Email = strings.TrimSpace(acct.Email)
+	acct.AuthMode = strings.TrimSpace(acct.AuthMode)
+	acct.Tier = strings.TrimSpace(acct.Tier)
 	if strings.TrimSpace(acct.Provider) == "" {
 		return domain.UpstreamAccount{}, errors.New("provider is required")
 	}
 	if strings.TrimSpace(acct.DisplayName) == "" {
 		return domain.UpstreamAccount{}, errors.New("display_name is required")
+	}
+	if acct.Meta == nil {
+		acct.Meta = map[string]string{}
+	}
+	if len(acct.SupportsModels) > 0 {
+		models := make([]string, 0, len(acct.SupportsModels))
+		for _, model := range acct.SupportsModels {
+			model = strings.TrimSpace(model)
+			if model != "" {
+				models = append(models, model)
+			}
+		}
+		acct.SupportsModels = models
 	}
 	if acct.ID == "" {
 		acct.ID = "acct-" + randomID(4)
