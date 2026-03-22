@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "Starting Unified Subscription Proxy Environment (Local Dev)"
+echo "Starting 云钥平台 Environment (Local Dev)"
 echo "---------------------------------------------------------"
 
 if ! command -v docker &> /dev/null; then

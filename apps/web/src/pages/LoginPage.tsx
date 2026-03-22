@@ -36,7 +36,7 @@ export default function LoginPage() {
         <div className="grid w-full gap-10 lg:grid-cols-[1.2fr_0.9fr]">
           <section className="rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.35),_transparent_45%),linear-gradient(135deg,#0f172a,#111827_45%,#052e16)] p-10 shadow-2xl">
             <p className="mb-4 inline-flex rounded-full border border-emerald-400/30 bg-emerald-400/10 px-4 py-1 text-sm text-emerald-200">
-              统一订阅反代平台
+              云钥平台
             </p>
             <h1 className="text-4xl font-bold leading-tight md:text-5xl">一个入口，统一管理套餐、密钥与模型调用。</h1>
             <p className="mt-6 max-w-2xl text-lg text-slate-300">

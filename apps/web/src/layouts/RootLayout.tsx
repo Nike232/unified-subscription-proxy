@@ -20,7 +20,7 @@ export default function RootLayout() {
       <aside className="w-64 bg-slate-900 text-white flex flex-col transition-all">
         <div className="h-16 flex items-center px-6 border-b border-slate-800">
           <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
-            统一反代平台
+            云钥平台
           </h1>
         </div>
         <nav className="flex-1 py-4 px-3 space-y-1">

@@ -1,6 +1,6 @@
-# Unified Subscription Proxy
+# 云钥平台
 
-一个面向 `Claude / Codex / OpenAI(GPT) / Gemini / Antigravity` 的统一订阅反代平台 monorepo。
+一个面向 `Claude / Codex / OpenAI(GPT) / Gemini / Antigravity` 的统一订阅与模型接入平台 monorepo。
 
 当前仓库采用双栈内核并行，但当前默认生产主链已经固定为 `proxy-core-go`：
 
@@ -9,7 +9,7 @@
 - `apps/proxy-core-rust`
   Rust 实现的高集成反代内核
 
-当前版本实现了一个可运行的订阅代理平台：
+当前版本实现了一个可运行的平台主链：
 
 - `apps/control-plane`
   用户、订阅、套餐、API Key、上游账号池的控制面 API
