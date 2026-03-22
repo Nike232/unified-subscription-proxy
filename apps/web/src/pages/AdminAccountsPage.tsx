@@ -706,7 +706,7 @@ export default function AdminAccountsPage() {
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                     <div>当前 Redirect URL：<span className="font-mono text-xs break-all">{oauthEditor.redirect_url || "未配置"}</span></div>
-                    <div className="mt-1">OpenAI 默认直接回跳到本站；Gemini 默认更接近 Gemini CLI / Code Assist 方式，必要时可粘贴回调 URL 或授权码完成登录。</div>
+                    <div className="mt-1">OpenAI 默认按 Codex CLI 方式使用 localhost 回调；Gemini 默认更接近 Gemini CLI / Code Assist 方式。两者如果浏览器没有自动完成，都可以把回调 URL 或授权码粘贴回来。</div>
                   </div>
                   <button
                     type="button"

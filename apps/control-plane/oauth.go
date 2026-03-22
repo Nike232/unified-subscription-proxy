@@ -38,6 +38,7 @@ type automationConfig struct {
 
 const geminiCLIBuiltinClientID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
 const geminiCLIBuiltinRedirectURL = "https://codeassist.google.com/authcode"
+const openAIBuiltinRedirectURL = "http://localhost:1455/auth/callback"
 
 func defaultOAuthCallbackURL(provider string) string {
 	base := strings.TrimSpace(os.Getenv("CONTROL_PLANE_PUBLIC_ORIGIN"))
@@ -70,7 +71,7 @@ func oauthBaseConfigs() map[string]service.OAuthProviderConfig {
 			ClientSecret:         os.Getenv("OPENAI_OAUTH_CLIENT_SECRET"),
 			AuthorizeURL:         getenv("OPENAI_OAUTH_AUTHORIZE_URL", "https://auth.openai.com/oauth/authorize"),
 			TokenURL:             getenv("OPENAI_OAUTH_TOKEN_URL", "https://auth.openai.com/oauth/token"),
-			RedirectURL:          getenv("OPENAI_OAUTH_REDIRECT_URL", defaultOAuthCallbackURL(domain.ProviderOpenAI)),
+			RedirectURL:          getenv("OPENAI_OAUTH_REDIRECT_URL", openAIBuiltinRedirectURL),
 			Scopes:               defaultScopes(splitCSV(os.Getenv("OPENAI_OAUTH_SCOPES")), []string{"openid", "profile", "email", "offline_access"}),
 			RefreshScopes:        defaultScopes(splitCSV(os.Getenv("OPENAI_OAUTH_REFRESH_SCOPES")), []string{"openid", "profile", "email"}),
 			UsePKCE:              true,
