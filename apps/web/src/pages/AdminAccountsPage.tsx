@@ -190,7 +190,16 @@ export default function AdminAccountsPage() {
   const [oauthConfigs, setOAuthConfigs] = useState<Record<string, AdminOAuthProviderConfig>>({});
   const [oauthEditor, setOAuthEditor] = useState(emptyOAuthEditor);
   const [showAdvancedOAuth, setShowAdvancedOAuth] = useState(false);
-  const [pendingOAuth, setPendingOAuth] = useState<{ accountId: string; provider: string; state: string; authorizeURL: string } | null>(null);
+  const [pendingOAuth, setPendingOAuth] = useState<{
+    accountId: string;
+    provider: string;
+    state: string;
+    mode: "browser" | "device";
+    authorizeURL?: string;
+    verificationURL?: string;
+    userCode?: string;
+    intervalSeconds?: number;
+  } | null>(null);
   const [manualOAuthInput, setManualOAuthInput] = useState("");
   const [showSecrets, setShowSecrets] = useState({
     api_key: false,
@@ -309,24 +318,77 @@ export default function AdminAccountsPage() {
     setError("");
     setMessage("");
     try {
-      const payload = await apiFetch<{ authorize_url: string; session?: { state?: string } }>(`/api/admin/upstream-accounts/${account.id}/oauth/start`, {
+      const payload = await apiFetch<{
+        authorize_url?: string;
+        verification_url?: string;
+        user_code?: string;
+        interval_seconds?: number;
+        mode?: "browser" | "device";
+        session?: { state?: string };
+      }>(`/api/admin/upstream-accounts/${account.id}/oauth/start`, {
         method: "POST",
         body: JSON.stringify({ redirect_to: window.location.href }),
       });
-      if (!payload.authorize_url) {
-        throw new Error("未获取到 OAuth 授权地址。");
-      }
-      setPendingOAuth({
-        accountId: account.id,
-        provider: account.provider,
-        state: payload.session?.state || "",
-        authorizeURL: payload.authorize_url,
-      });
       setManualOAuthInput("");
-      window.open(payload.authorize_url, "_blank", "noopener,noreferrer");
-      setMessage(`${account.provider} OAuth 授权页已打开。若最后跳到 localhost 页面超时或打不开，请直接复制地址栏里的完整回调 URL，粘贴到下方完成登录。`);
+      if (payload.mode === "device") {
+        if (!payload.verification_url || !payload.user_code) {
+          throw new Error("未获取到 OpenAI 设备码登录信息。");
+        }
+        setPendingOAuth({
+          accountId: account.id,
+          provider: account.provider,
+          state: payload.session?.state || "",
+          mode: "device",
+          verificationURL: payload.verification_url,
+          userCode: payload.user_code,
+          intervalSeconds: payload.interval_seconds,
+        });
+        window.open(payload.verification_url, "_blank", "noopener,noreferrer");
+        setMessage(`OpenAI 设备码登录页已打开。请完成授权后，回到这里点击“检查授权状态”。`);
+      } else {
+        if (!payload.authorize_url) {
+          throw new Error("未获取到 OAuth 授权地址。");
+        }
+        setPendingOAuth({
+          accountId: account.id,
+          provider: account.provider,
+          state: payload.session?.state || "",
+          mode: "browser",
+          authorizeURL: payload.authorize_url,
+        });
+        window.open(payload.authorize_url, "_blank", "noopener,noreferrer");
+        setMessage(`${account.provider} OAuth 授权页已打开。若最后跳到 localhost 页面超时或打不开，请直接复制地址栏里的完整回调 URL，粘贴到下方完成登录。`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "发起 OAuth 登录失败。");
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  const pollOAuth = async () => {
+    if (!pendingOAuth || pendingOAuth.mode !== "device") {
+      return;
+    }
+    setBusyAction(`${pendingOAuth.accountId}:oauth-poll`);
+    setError("");
+    setMessage("");
+    try {
+      const payload = await apiFetch<{ status: string; account?: AdminUpstreamAccountItem }>(`/api/admin/upstream-accounts/${pendingOAuth.accountId}/oauth/poll`, {
+        method: "POST",
+        body: JSON.stringify({ state: pendingOAuth.state }),
+      });
+      if (payload.status === "pending") {
+        setMessage("尚未检测到 OpenAI 授权完成，请在新窗口完成登录后再点一次检查状态。");
+        return;
+      }
+      if (payload.account?.id) {
+        await load(payload.account.id);
+      }
+      setPendingOAuth(null);
+      setMessage("OpenAI OAuth 登录已完成。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "检查 OAuth 状态失败。");
     } finally {
       setBusyAction("");
     }
@@ -665,31 +727,51 @@ export default function AdminAccountsPage() {
                 <div className="space-y-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
                   <div className="text-sm text-blue-900">
                     <p>授权窗口已经打开。</p>
-                    <p className="mt-1">如果浏览器未自动完成，或者最后停在 localhost 超时页，请粘贴完整回调 URL，或者只粘贴授权码。</p>
+                    {pendingOAuth.mode === "device" ? (
+                      <>
+                        <p className="mt-1">OpenAI 现在按老项目的设备码方式登录。请在新窗口打开授权页，输入下方用户码完成登录。</p>
+                        <p className="mt-2">用户码：<span className="rounded bg-white px-2 py-1 font-mono text-base">{pendingOAuth.userCode}</span></p>
+                        {pendingOAuth.verificationURL ? <p className="mt-2 break-all font-mono text-xs">登录地址：{pendingOAuth.verificationURL}</p> : null}
+                      </>
+                    ) : (
+                      <p className="mt-1">如果浏览器未自动完成，或者最后停在 localhost 超时页，请粘贴完整回调 URL，或者只粘贴授权码。</p>
+                    )}
                     {pendingOAuth.state ? <p className="mt-2 break-all font-mono text-xs">state: {pendingOAuth.state}</p> : null}
                   </div>
-                  <textarea
-                    className="min-h-28 w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm"
-                    placeholder="粘贴完整回调 URL，或者只粘贴 code"
-                    value={manualOAuthInput}
-                    onChange={(e) => setManualOAuthInput(e.target.value)}
-                  />
                   <div className="flex flex-wrap gap-3">
-                    <button
-                      className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
-                      disabled={busyAction === `${pendingOAuth.accountId}:oauth-complete` || !manualOAuthInput.trim()}
-                      onClick={() => void completeOAuth()}
-                    >
-                      {busyAction === `${pendingOAuth.accountId}:oauth-complete` ? "提交中..." : "提交回调完成登录"}
-                    </button>
+                    {pendingOAuth.mode === "device" ? (
+                      <button
+                        className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                        disabled={busyAction === `${pendingOAuth.accountId}:oauth-poll`}
+                        onClick={() => void pollOAuth()}
+                      >
+                        {busyAction === `${pendingOAuth.accountId}:oauth-poll` ? "检查中..." : "检查授权状态"}
+                      </button>
+                    ) : (
+                      <button
+                        className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                        disabled={busyAction === `${pendingOAuth.accountId}:oauth-complete` || !manualOAuthInput.trim()}
+                        onClick={() => void completeOAuth()}
+                      >
+                        {busyAction === `${pendingOAuth.accountId}:oauth-complete` ? "提交中..." : "提交回调完成登录"}
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-700"
-                      onClick={() => window.open(pendingOAuth.authorizeURL, "_blank", "noopener,noreferrer")}
+                      onClick={() => window.open(pendingOAuth.mode === "device" ? pendingOAuth.verificationURL : pendingOAuth.authorizeURL, "_blank", "noopener,noreferrer")}
                     >
-                      再次打开授权页
+                      {pendingOAuth.mode === "device" ? "再次打开登录页" : "再次打开授权页"}
                     </button>
                   </div>
+                  {pendingOAuth.mode === "browser" ? (
+                    <textarea
+                      className="min-h-28 w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm"
+                      placeholder="粘贴完整回调 URL，或者只粘贴 code"
+                      value={manualOAuthInput}
+                      onChange={(e) => setManualOAuthInput(e.target.value)}
+                    />
+                  ) : null}
                 </div>
               ) : null}
 

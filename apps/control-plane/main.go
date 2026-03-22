@@ -271,6 +271,23 @@ func main() {
 				writeError(w, http.StatusBadRequest, err)
 				return
 			}
+			if account.Provider == domain.ProviderOpenAI {
+				deviceSession, err := startOpenAIDeviceFlow(r.Context(), oauthHTTPClient, account.ID, session.State)
+				if err != nil {
+					_ = svc.MarkOAuthSessionFailed(session.State, err.Error())
+					writeError(w, http.StatusBadRequest, err)
+					return
+				}
+				writeJSON(w, http.StatusOK, map[string]any{
+					"session":          session,
+					"provider":         providerName,
+					"mode":             "device",
+					"verification_url": openAIDeviceVerificationURL,
+					"user_code":        deviceSession.UserCode,
+					"interval_seconds": int(openAIDevicePollInterval / time.Second),
+				})
+				return
+			}
 			authURL, err := service.BuildOAuthAuthorizeURL(cfg, session)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err)
@@ -280,6 +297,87 @@ func main() {
 				"session":       session,
 				"provider":      providerName,
 				"authorize_url": authURL,
+			})
+			return
+		}
+		if strings.HasSuffix(path, "/oauth/poll") {
+			if r.Method != http.MethodPost {
+				http.NotFound(w, r)
+				return
+			}
+			id := strings.TrimSuffix(path, "/oauth/poll")
+			data, err := svc.Data()
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			account, err := findAccount(data, id)
+			if err != nil {
+				writeError(w, http.StatusNotFound, err)
+				return
+			}
+			if account.Provider != domain.ProviderOpenAI {
+				writeError(w, http.StatusBadRequest, errString("device flow only supported for openai"))
+				return
+			}
+			var req struct {
+				State string `json:"state"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeError(w, http.StatusBadRequest, errString("invalid oauth poll payload"))
+				return
+			}
+			state := strings.TrimSpace(req.State)
+			if state == "" {
+				writeError(w, http.StatusBadRequest, errString("missing oauth state"))
+				return
+			}
+			oauthSession, err := svc.OAuthSessionByState(state)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			if oauthSession.AccountID != account.ID {
+				writeError(w, http.StatusBadRequest, errString("oauth session account mismatch"))
+				return
+			}
+			tokenResult, deviceSession, err := pollOpenAIDeviceFlow(r.Context(), oauthHTTPClient, state)
+			if err != nil {
+				if errors.Is(err, errOpenAIDevicePending) {
+					writeJSON(w, http.StatusOK, map[string]any{
+						"status":           "pending",
+						"provider":         account.Provider,
+						"state":            state,
+						"verification_url": openAIDeviceVerificationURL,
+						"user_code":        deviceSession.UserCode,
+						"interval_seconds": int(openAIDevicePollInterval / time.Second),
+					})
+					return
+				}
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			tokenPayload, err := exchangeOAuthToken(r.Context(), oauthHTTPClient, oauthConfigs(svc)[domain.ProviderOpenAI], url.Values{
+				"grant_type":    []string{"authorization_code"},
+				"client_id":     []string{getenv("OPENAI_OAUTH_CLIENT_ID", "app_EMoamEEZ73f0CkXaXp7hrann")},
+				"code":          []string{strings.TrimSpace(tokenResult.AuthorizationCode)},
+				"redirect_uri":  []string{openAIDeviceTokenExchangeRedirectURI},
+				"code_verifier": []string{strings.TrimSpace(tokenResult.CodeVerifier)},
+			})
+			if err != nil {
+				_ = svc.MarkOAuthSessionFailed(state, err.Error())
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			updatedAccount, _, err := svc.CompleteOAuthSession(state, tokenPayload)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"status":   "completed",
+				"provider": account.Provider,
+				"account":  updatedAccount,
 			})
 			return
 		}

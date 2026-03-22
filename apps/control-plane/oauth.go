@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"unifiedsubscriptionproxy/internal/platform/domain"
@@ -39,6 +43,48 @@ type automationConfig struct {
 const geminiCLIBuiltinClientID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
 const geminiCLIBuiltinRedirectURL = "https://codeassist.google.com/authcode"
 const openAIBuiltinRedirectURL = "http://localhost:1455/auth/callback"
+
+const (
+	openAIDeviceUserCodeURL              = "https://auth.openai.com/api/accounts/deviceauth/usercode"
+	openAIDeviceTokenURL                 = "https://auth.openai.com/api/accounts/deviceauth/token"
+	openAIDeviceVerificationURL          = "https://auth.openai.com/codex/device"
+	openAIDeviceTokenExchangeRedirectURI = "https://auth.openai.com/deviceauth/callback"
+	openAIDevicePollInterval             = 5 * time.Second
+	openAIDeviceFlowTTL                  = 15 * time.Minute
+)
+
+type openAIDeviceSession struct {
+	AccountID      string
+	State          string
+	DeviceAuthID   string
+	UserCode       string
+	CodeVerifier   string
+	CodeChallenge  string
+	CreatedAt      time.Time
+	ExpiresAt      time.Time
+}
+
+type openAIDeviceUserCodeResponse struct {
+	DeviceAuthID string          `json:"device_auth_id"`
+	UserCode     string          `json:"user_code"`
+	UserCodeAlt  string          `json:"usercode"`
+	Interval     json.RawMessage `json:"interval"`
+}
+
+type openAIDeviceTokenResponse struct {
+	AuthorizationCode string `json:"authorization_code"`
+	CodeVerifier      string `json:"code_verifier"`
+	CodeChallenge     string `json:"code_challenge"`
+}
+
+var errOpenAIDevicePending = errors.New("openai_device_pending")
+
+var openAIDeviceSessions = struct {
+	mu       sync.Mutex
+	sessions map[string]openAIDeviceSession
+}{
+	sessions: map[string]openAIDeviceSession{},
+}
 
 func defaultOAuthCallbackURL(provider string) string {
 	base := strings.TrimSpace(os.Getenv("CONTROL_PLANE_PUBLIC_ORIGIN"))
@@ -223,6 +269,135 @@ func defaultScopes(current []string, fallback []string) []string {
 		return current
 	}
 	return append([]string(nil), fallback...)
+}
+
+func generateLocalCodeVerifier() (string, error) {
+	bytes := make([]byte, 64)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", bytes), nil
+}
+
+func generateLocalCodeChallenge(verifier string) string {
+	hash := sha256.Sum256([]byte(verifier))
+	return strings.TrimRight(base64.URLEncoding.EncodeToString(hash[:]), "=")
+}
+
+func randomOAuthState() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
+	return fmt.Sprintf("%x", b)
+}
+
+func startOpenAIDeviceFlow(ctx context.Context, client *http.Client, accountID, state string) (openAIDeviceSession, error) {
+	payload, err := json.Marshal(map[string]string{
+		"client_id": getenv("OPENAI_OAUTH_CLIENT_ID", "app_EMoamEEZ73f0CkXaXp7hrann"),
+	})
+	if err != nil {
+		return openAIDeviceSession{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, openAIDeviceUserCodeURL, bytes.NewReader(payload))
+	if err != nil {
+		return openAIDeviceSession{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return openAIDeviceSession{}, fmt.Errorf("请求 OpenAI 设备码失败: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return openAIDeviceSession{}, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return openAIDeviceSession{}, fmt.Errorf("OpenAI 设备码请求失败(%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var parsed openAIDeviceUserCodeResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return openAIDeviceSession{}, err
+	}
+	userCode := strings.TrimSpace(parsed.UserCode)
+	if userCode == "" {
+		userCode = strings.TrimSpace(parsed.UserCodeAlt)
+	}
+	if userCode == "" || strings.TrimSpace(parsed.DeviceAuthID) == "" {
+		return openAIDeviceSession{}, errors.New("OpenAI 设备码响应缺少必要字段")
+	}
+	codeVerifier, err := generateLocalCodeVerifier()
+	if err != nil {
+		return openAIDeviceSession{}, err
+	}
+	session := openAIDeviceSession{
+		AccountID:     accountID,
+		State:         state,
+		DeviceAuthID:  strings.TrimSpace(parsed.DeviceAuthID),
+		UserCode:      userCode,
+		CodeVerifier:  codeVerifier,
+		CodeChallenge: generateLocalCodeChallenge(codeVerifier),
+		CreatedAt:     time.Now().UTC(),
+		ExpiresAt:     time.Now().UTC().Add(openAIDeviceFlowTTL),
+	}
+	openAIDeviceSessions.mu.Lock()
+	openAIDeviceSessions.sessions[session.State] = session
+	openAIDeviceSessions.mu.Unlock()
+	return session, nil
+}
+
+func pollOpenAIDeviceFlow(ctx context.Context, client *http.Client, state string) (openAIDeviceTokenResponse, openAIDeviceSession, error) {
+	openAIDeviceSessions.mu.Lock()
+	session, ok := openAIDeviceSessions.sessions[state]
+	openAIDeviceSessions.mu.Unlock()
+	if !ok {
+		return openAIDeviceTokenResponse{}, openAIDeviceSession{}, errors.New("设备码会话不存在")
+	}
+	if time.Now().UTC().After(session.ExpiresAt) {
+		openAIDeviceSessions.mu.Lock()
+		delete(openAIDeviceSessions.sessions, state)
+		openAIDeviceSessions.mu.Unlock()
+		return openAIDeviceTokenResponse{}, openAIDeviceSession{}, errors.New("设备码会话已过期")
+	}
+	payload, err := json.Marshal(map[string]string{
+		"device_auth_id": session.DeviceAuthID,
+		"user_code":      session.UserCode,
+	})
+	if err != nil {
+		return openAIDeviceTokenResponse{}, openAIDeviceSession{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, openAIDeviceTokenURL, bytes.NewReader(payload))
+	if err != nil {
+		return openAIDeviceTokenResponse{}, openAIDeviceSession{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return openAIDeviceTokenResponse{}, openAIDeviceSession{}, fmt.Errorf("轮询 OpenAI 设备码失败: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return openAIDeviceTokenResponse{}, openAIDeviceSession{}, err
+	}
+	switch {
+	case resp.StatusCode >= 200 && resp.StatusCode < 300:
+		var parsed openAIDeviceTokenResponse
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return openAIDeviceTokenResponse{}, openAIDeviceSession{}, err
+		}
+		if strings.TrimSpace(parsed.AuthorizationCode) == "" || strings.TrimSpace(parsed.CodeVerifier) == "" {
+			return openAIDeviceTokenResponse{}, openAIDeviceSession{}, errors.New("OpenAI 设备码响应缺少授权码")
+		}
+		return parsed, session, nil
+	case resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusNotFound:
+		return openAIDeviceTokenResponse{}, session, errOpenAIDevicePending
+	default:
+		return openAIDeviceTokenResponse{}, openAIDeviceSession{}, fmt.Errorf("OpenAI 设备码轮询失败(%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
 }
 
 func refreshExpiringAccounts(ctx context.Context, svc *service.Service, client *http.Client, configs map[string]service.OAuthProviderConfig, automation automationConfig) error {
