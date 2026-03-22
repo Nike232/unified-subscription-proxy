@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiFetch } from "../lib/api";
 import { formatCurrency, formatDate, mapOrderStatus, mapPaymentStatus, mapSubscriptionStatus } from "../lib/format";
+import { paymentQrImageUrl, paymentQrNote } from "../lib/payment";
 import type { UserOrderDetail } from "../lib/types";
 
 export default function UserOrderDetailPage() {
@@ -100,21 +101,17 @@ export default function UserOrderDetailPage() {
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-800">付款确认</h3>
+          <h3 className="text-lg font-semibold text-slate-800">扫码付款</h3>
           <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-            <div className="mx-auto flex h-44 w-44 items-center justify-center rounded-2xl bg-white text-center text-sm text-slate-500 ring-1 ring-slate-200">
-              付款二维码
-              <br />
-              内部测试占位
-            </div>
-            <p className="mt-4 text-sm text-slate-500">当前阶段使用简化支付流程。你可以打开付款链接查看测试页，或直接手动确认付款。</p>
-            {payment?.checkout_url ? (
-              <a className="mt-4 inline-flex text-sm font-medium text-blue-600 hover:text-blue-800" href={payment.checkout_url} target="_blank" rel="noreferrer">
-                打开付款页
-              </a>
-            ) : null}
+            <img
+              className="mx-auto h-44 w-44 rounded-2xl bg-white object-cover ring-1 ring-slate-200"
+              src={paymentQrImageUrl}
+              alt="付款二维码"
+            />
+            <p className="mt-4 text-sm text-slate-500">{paymentQrNote}</p>
           </div>
           <div className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+            <p>订单号：{order.id}</p>
             <p>订单金额：{formatCurrency(order.amount_cents, order.currency)}</p>
             <p className="mt-2">订单状态：{mapOrderStatus(order.status)}</p>
             <p className="mt-2">付款状态：{mapPaymentStatus(payment?.status)}</p>

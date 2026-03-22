@@ -81,6 +81,9 @@ services:
     build:
       context: apps/web
       dockerfile: Dockerfile
+      args:
+        VITE_PAYMENT_QR_IMAGE_URL: ${VITE_PAYMENT_QR_IMAGE_URL:-}
+        VITE_PAYMENT_QR_NOTE: ${VITE_PAYMENT_QR_NOTE:-}
     image: ghcr.io/nike232/unified-subscription-proxy-web:main
     ports:
       - "3000:80"

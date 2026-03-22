@@ -41,6 +41,22 @@ func main() {
 	mux := http.NewServeMux()
 	runAutomationWorkers(context.Background(), svc, oauthHTTPClient, providerRegistry, oauthProviderConfigs, automation)
 
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"service": "control-plane",
+			"message": "control-plane API is running",
+			"docs": []string{
+				"/healthz",
+				"/api/public/catalog",
+				"/api/admin/kernel-status",
+			},
+		})
+	})
+
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":        "ok",

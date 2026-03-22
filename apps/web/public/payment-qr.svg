@@ -1,0 +1,44 @@
+<svg width="320" height="320" viewBox="0 0 320 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="320" height="320" rx="32" fill="#F8FAFC"/>
+  <rect x="24" y="24" width="272" height="272" rx="24" fill="white" stroke="#CBD5E1" stroke-width="4"/>
+  <rect x="48" y="48" width="64" height="64" rx="8" fill="#0F172A"/>
+  <rect x="60" y="60" width="40" height="40" rx="4" fill="white"/>
+  <rect x="208" y="48" width="64" height="64" rx="8" fill="#0F172A"/>
+  <rect x="220" y="60" width="40" height="40" rx="4" fill="white"/>
+  <rect x="48" y="208" width="64" height="64" rx="8" fill="#0F172A"/>
+  <rect x="60" y="220" width="40" height="40" rx="4" fill="white"/>
+  <rect x="136" y="56" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="160" y="56" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="184" y="56" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="136" y="80" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="184" y="80" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="136" y="104" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="160" y="104" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="184" y="104" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="136" y="136" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="160" y="136" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="208" y="136" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="232" y="136" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="256" y="136" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="136" y="160" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="184" y="160" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="232" y="160" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="256" y="160" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="136" y="184" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="160" y="184" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="184" y="184" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="208" y="184" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="256" y="184" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="136" y="208" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="184" y="208" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="208" y="208" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="232" y="208" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="136" y="232" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="160" y="232" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="208" y="232" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="256" y="232" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="136" y="256" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="184" y="256" width="16" height="16" rx="2" fill="#0F172A"/>
+  <rect x="208" y="256" width="16" height="16" rx="2" fill="#0F172A"/>
+  <text x="160" y="302" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#475569">测试收款码</text>
+</svg>
